@@ -23,16 +23,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   lightContainer: {
-    backgroundColor: '#A1CEDC',
+    backgroundColor: '#D0D0D0',
   },
   darkContainer: {
-    backgroundColor: '#1D3D47',
+    backgroundColor: '#353636',
   },
   lightThemeText: {
-    color: 'black',
+    color: '#353636',
   },
   darkThemeText: {
-    color: 'white',
+    color: '#D0D0D0',
   },
   titleText: {
     paddingTop: 20,
