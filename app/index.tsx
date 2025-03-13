@@ -10,8 +10,10 @@ export default function Index() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={[styles.container, themeContainerStyle]}>
-        <Text style={[themeTextStyle, styles.titleText]} >News Reader</Text>
+      {/* styling fo da app */}
+      <SafeAreaView style={[styles.container, themeContainerStyle]}> 
+        {/* title */}
+        <Text style={[themeTextStyle, styles.titleText]} >News Reader</Text> 
       </SafeAreaView>
     </SafeAreaProvider>
   );
