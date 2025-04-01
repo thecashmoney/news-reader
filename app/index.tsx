@@ -29,12 +29,6 @@ export default function Index() {
         content: "LOS ANGELES -- Atlanta Braves outfielder Jurickson Profar has tested positive for a banned substance..."
       },
       {
-        source: "ESPN",
-        title: "Soldiers",
-        description: "Atlanta Braves outfielder Jurickson Profar was suspended for 80 games by Major League Baseball.",
-        content: "LOS ANGELES -- Atlanta Braves outfielder Jurickson Profar has tested positive for a banned substance..."
-      },
-      {
         source: "CNN",
         title: "Bodies of three out of four US soldiers recovered - CNN",
         description: "The bodies of three of the four US soldiers who were reported missing have been recovered.",
@@ -63,7 +57,8 @@ export default function Index() {
     <SafeAreaProvider>
       <SafeAreaView style={[styles.container, themeContainerStyle]}> 
         <Text style={[themeTextStyle, styles.titleText]}>News Reader</Text>
-        
+        <Text></Text>
+        <Text style={themeTextStyle}>Search by Source:</Text>
         <TextInput
           style={styles.input}
           placeholder="Enter news source"
@@ -71,6 +66,7 @@ export default function Index() {
           onChangeText={setSource}
         />
         
+        <Text style={themeTextStyle}>Search by Query:</Text>
         <TextInput
           style={styles.input}
           placeholder="Enter search query"
