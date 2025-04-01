@@ -1,96 +1,103 @@
-import { Text, View, StyleSheet, useColorScheme, Button, FlatList, TextInput } from "react-native";
+import { Text, View, StyleSheet, useColorScheme, Button, FlatList, TextInput, Alert } from "react-native";
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { useState } from "react";
 
-interface NewsArticle {
-  source: string;
+// Define the NewsArticle type
+type NewsArticle = {
+  source: { name: string };
   title: string;
   description: string;
   content: string;
-}
+};
 
 export default function Index() {
   const colorScheme = useColorScheme();
-  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
-  const [articles, setArticles] = useState<NewsArticle[]>([]);
-  const [selectedArticle, setSelectedArticle] = useState<NewsArticle | null>(null);
   const [source, setSource] = useState<string>("");
   const [query, setQuery] = useState<string>("");
-  
+  const [articles, setArticles] = useState<NewsArticle[]>([]);
+  const [selectedArticle, setSelectedArticle] = useState<NewsArticle | null>(null);
+  const [showFullArticle, setShowFullArticle] = useState<boolean>(false);
+
   const themeTextStyle = colorScheme === 'light' ? styles.lightThemeText : styles.darkThemeText;
   const themeContainerStyle = colorScheme === 'light' ? styles.lightContainer : styles.darkContainer;
 
-  const sampleJsonData = {
-    articles: [
+  const fetchArticles = () => {
+    const sampleData: NewsArticle[] = [
       {
-        source: "ESPN",
-        title: "Braves' Profar gets 80-game ban for PED violation - ESPN",
-        description: "Atlanta Braves outfielder Jurickson Profar was suspended for 80 games by Major League Baseball.",
-        content: "LOS ANGELES -- Atlanta Braves outfielder Jurickson Profar has tested positive for a banned substance..."
+        source: { name: "CNN" },
+        title: "Breaking News: AI Advances",
+        description: "New AI technology is changing the world.",
+        content: "Full article content about AI technology and its impacts...",
       },
       {
-        source: "CNN",
-        title: "Bodies of three out of four US soldiers recovered - CNN",
-        description: "The bodies of three of the four US soldiers who were reported missing have been recovered.",
-        content: "The vehicle has also been recovered, and search operations continue for the fourth soldier."
+        source: { name: "BBC" },
+        title: "SpaceX's Latest Launch",
+        description: "SpaceX successfully launches another rocket.",
+        content: "Full article content about SpaceX's recent launch and mission details...",
       }
-    ]
-  };
-
-  const fetchArticles = () => {
-    if (!query && !source) {
-      setArticles([]);
-      return;
-    }
+    ];
     
-    const filteredArticles = sampleJsonData.articles.filter(article => {
-      return (
-        (source && article.source.toLowerCase().includes(source.toLowerCase())) ||
-        (query && article.title.toLowerCase().includes(query.toLowerCase()))
-      );
-    });
+    const filteredArticles = sampleData.filter(article => 
+      (source ? article.source.name.toLowerCase().includes(source.toLowerCase()) : true) &&
+      (query ? article.title.toLowerCase().includes(query.toLowerCase()) : true)
+    );
     
     setArticles(filteredArticles);
+  };
+
+  const handleReadMore = (article: NewsArticle) => {
+    setSelectedArticle(article);
+    Alert.alert(
+      "Read More?",
+      "Do you want to read the full article?",
+      [
+        { text: "No", onPress: () => setShowFullArticle(false) },
+        { text: "Yes", onPress: () => setShowFullArticle(true) }
+      ]
+    );
   };
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={[styles.container, themeContainerStyle]}> 
         <Text style={[themeTextStyle, styles.titleText]}>News Reader</Text>
-        <Text></Text>
+        
         <Text style={themeTextStyle}>Search by Source:</Text>
         <TextInput
           style={styles.input}
-          placeholder="Enter news source"
-          value={source}
+          placeholder="Enter source name"
           onChangeText={setSource}
+          value={source}
         />
-        
+
         <Text style={themeTextStyle}>Search by Query:</Text>
         <TextInput
           style={styles.input}
-          placeholder="Enter search query"
-          value={query}
+          placeholder="Enter search term"
           onChangeText={setQuery}
+          value={query}
         />
-        
-        <Button title="Fetch News" onPress={fetchArticles} />
+
+        <Button title="Search" onPress={fetchArticles} />
         
         {articles.length > 0 ? (
           <FlatList
             data={articles}
             keyExtractor={(item) => item.title}
             renderItem={({ item }) => (
-              <Text style={themeTextStyle} onPress={() => setSelectedArticle(item)}>
-                {item.title} ({item.source})
-              </Text>
+              <View>
+                <Text style={themeTextStyle} onPress={() => handleReadMore(item)}>
+                  {item.title} ({item.source.name})
+                </Text>
+                <Text style={themeTextStyle}>{item.description}</Text>
+              </View>
             )}
           />
         ) : (
           <Text style={themeTextStyle}>No articles found</Text>
         )}
-        
-        {selectedArticle && (
+
+        {selectedArticle && showFullArticle && (
           <View>
             <Text style={themeTextStyle}>{selectedArticle.content}</Text>
           </View>
@@ -104,7 +111,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: "center",
-    padding: 20,
   },
   lightContainer: {
     backgroundColor: '#D0D0D0',
@@ -121,15 +127,14 @@ const styles = StyleSheet.create({
   titleText: {
     paddingTop: 20,
     fontWeight: 'bold',
-    fontSize: 30,
+    fontSize: 40,
   },
   input: {
-    width: '90%',
-    padding: 10,
-    margin: 10,
+    height: 40,
+    borderColor: 'gray',
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 5,
-    backgroundColor: '#fff'
+    margin: 10,
+    padding: 5,
+    width: '80%',
   }
 });
