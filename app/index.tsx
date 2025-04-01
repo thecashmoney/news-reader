@@ -1,66 +1,85 @@
-import { Text, View, StyleSheet, useColorScheme, Button, FlatList } from "react-native";
-import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
+import { Text, View, StyleSheet, useColorScheme, Button, FlatList, TextInput } from "react-native";
+import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { useState } from "react";
 
-// ✅ Define NewsArticle interface
 interface NewsArticle {
   source: string;
   title: string;
-  description: string | null;
-  content: string | null;
+  description: string;
+  content: string;
 }
-
-// ✅ Sample JSON data (replace with API response later)
-const jsonData = {
-  status: "ok",
-  totalResults: 35,
-  articles: [
-    {
-      source: { id: "espn", name: "ESPN" },
-      title: "Braves' Profar gets 80-game ban for PED violation - ESPN",
-      description: "Atlanta Braves outfielder Jurickson Profar was suspended for 80 games...",
-      content: "LOS ANGELES -- Atlanta Braves outfielder...",
-    },
-    {
-      source: { id: "cnn", name: "CNN" },
-      title: "Bodies of three out of four US soldiers recovered - CNN",
-      description: "The bodies of three of the four US soldiers have been recovered...",
-      content: "Summary: The bodies of three US soldiers...",
-    },
-  ],
-};
 
 export default function Index() {
   const colorScheme = useColorScheme();
-  const [articles, setArticles] = useState<NewsArticle[]>([]); // ❌ No articles initially
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [selectedArticle, setSelectedArticle] = useState<NewsArticle | null>(null);
+  const [source, setSource] = useState<string>("");
+  const [query, setQuery] = useState<string>("");
+  
+  const themeTextStyle = colorScheme === 'light' ? styles.lightThemeText : styles.darkThemeText;
+  const themeContainerStyle = colorScheme === 'light' ? styles.lightContainer : styles.darkContainer;
 
-  const themeTextStyle = colorScheme === "light" ? styles.lightThemeText : styles.darkThemeText;
-  const themeContainerStyle = colorScheme === "light" ? styles.lightContainer : styles.darkContainer;
-
-  // ✅ Function to fetch articles
-  const fetchArticles = (): NewsArticle[] => {
-    return jsonData.articles.map((article) => ({
-      source: article.source.name,
-      title: article.title,
-      description: article.description,
-      content: article.content,
-    }));
+  const sampleJsonData = {
+    articles: [
+      {
+        source: "ESPN",
+        title: "Braves' Profar gets 80-game ban for PED violation - ESPN",
+        description: "Atlanta Braves outfielder Jurickson Profar was suspended for 80 games by Major League Baseball.",
+        content: "LOS ANGELES -- Atlanta Braves outfielder Jurickson Profar has tested positive for a banned substance..."
+      },
+      {
+        source: "ESPN",
+        title: "Soldiers",
+        description: "Atlanta Braves outfielder Jurickson Profar was suspended for 80 games by Major League Baseball.",
+        content: "LOS ANGELES -- Atlanta Braves outfielder Jurickson Profar has tested positive for a banned substance..."
+      },
+      {
+        source: "CNN",
+        title: "Bodies of three out of four US soldiers recovered - CNN",
+        description: "The bodies of three of the four US soldiers who were reported missing have been recovered.",
+        content: "The vehicle has also been recovered, and search operations continue for the fourth soldier."
+      }
+    ]
   };
 
-  // ✅ Select topic and load all articles (not filtering yet)
-  const selectTopic = () => {
-    setArticles(fetchArticles());
+  const fetchArticles = () => {
+    if (!query && !source) {
+      setArticles([]);
+      return;
+    }
+    
+    const filteredArticles = sampleJsonData.articles.filter(article => {
+      return (
+        (source && article.source.toLowerCase().includes(source.toLowerCase())) ||
+        (query && article.title.toLowerCase().includes(query.toLowerCase()))
+      );
+    });
+    
+    setArticles(filteredArticles);
   };
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={[styles.container, themeContainerStyle]}>
+      <SafeAreaView style={[styles.container, themeContainerStyle]}> 
         <Text style={[themeTextStyle, styles.titleText]}>News Reader</Text>
         
-        {/* ✅ Button now loads all articles */}
-        <Button title="Pick a Topic" onPress={selectTopic} />
-
+        <TextInput
+          style={styles.input}
+          placeholder="Enter news source"
+          value={source}
+          onChangeText={setSource}
+        />
+        
+        <TextInput
+          style={styles.input}
+          placeholder="Enter search query"
+          value={query}
+          onChangeText={setQuery}
+        />
+        
+        <Button title="Fetch News" onPress={fetchArticles} />
+        
         {articles.length > 0 ? (
           <FlatList
             data={articles}
@@ -72,9 +91,9 @@ export default function Index() {
             )}
           />
         ) : (
-          <Text style={themeTextStyle}>Press "Pick a Topic" to load articles.</Text> // ✅ Initial message
+          <Text style={themeTextStyle}>No articles found</Text>
         )}
-
+        
         {selectedArticle && (
           <View>
             <Text style={themeTextStyle}>{selectedArticle.content}</Text>
@@ -89,22 +108,32 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: "center",
+    padding: 20,
   },
   lightContainer: {
-    backgroundColor: "#D0D0D0",
+    backgroundColor: '#D0D0D0',
   },
   darkContainer: {
-    backgroundColor: "#353636",
+    backgroundColor: '#353636',
   },
   lightThemeText: {
-    color: "#353636",
+    color: '#353636',
   },
   darkThemeText: {
-    color: "#D0D0D0",
+    color: '#D0D0D0',
   },
   titleText: {
     paddingTop: 20,
-    fontWeight: "bold",
-    fontSize: 40,
+    fontWeight: 'bold',
+    fontSize: 30,
   },
+  input: {
+    width: '90%',
+    padding: 10,
+    margin: 10,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 5,
+    backgroundColor: '#fff'
+  }
 });
