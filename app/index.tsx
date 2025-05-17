@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ScrollView, Text, StyleSheet, useColorScheme, Button, FlatList, TextInput, Alert } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, useColorScheme, Button, FlatList, TextInput, Alert } from 'react-native';
 import axios from 'axios';
 import HTMLParser from 'html-parse-stringify';
-import {  SafeAreaView, SafeAreaProvider  } from 'react-native-safe-area-context';
+import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 
 // Define the NewsArticle type
 type NewsArticle = {
@@ -20,7 +20,6 @@ export default function Index() {
   const [content, setContent] = useState('');
   const [articleIndex, setArticleIndex] = useState(5);
   const NEWS_API_KEY = process.env.EXPO_PUBLIC_NEWS_API_KEY;
-
   const colorScheme = useColorScheme();
   const [source, setSource] = useState<string>("");
   const [query, setQuery] = useState<string>("");
@@ -30,31 +29,32 @@ export default function Index() {
 
   const themeTextStyle = colorScheme === 'light' ? styles.lightThemeText : styles.darkThemeText;
   const themeContainerStyle = colorScheme === 'light' ? styles.lightContainer : styles.darkContainer;
-  useEffect(() => {
-    const fetchArticles = async () => {
-      const url =
-        'https://newsapi.org/v2/top-headlines?' +
-        (source ? ('sources='+source.toLowerCase()+'&') : '') +
-        (query ? ('q='+query.toLowerCase()+'&') : '') +
-        `apiKey=${NEWS_API_KEY}`;
+  const fetchArticles = async () => {
+    const url =
+      'https://newsapi.org/v2/top-headlines?' +
+      (source ? ('sources=' + source.toLowerCase() + '&') : '') +
+      (query ? ('q=' + query.toLowerCase() + '&') : '') +
+      ((!source && !query) ? 'country=us&': '') +
+      `apiKey=${NEWS_API_KEY}`;
+    try {
+      const response = await axios.get(url);
 
-      try {
-        const response = await axios.get(url);
-
-        if (
-          response.data &&
-          response.data.articles &&
-          response.data.articles.length > 0
-        ) {
-          setJsonResponse(response.data.articles); // Save all articles
-          console.log(jsonResponse);
-          setLoading(false);
-        }
-      } catch (error) {
-        console.error('Error fetching articles:', error);
+      if (
+        response.data &&
+        response.data.articles &&
+        response.data.articles.length > 0
+      ) {
+        setJsonResponse(response.data.articles); // Save all articles
+        console.log(jsonResponse);
+        setLoading(false);
       }
-    };
-  }, []);
+    } catch (error) {
+      console.error('Error fetching articles:', error);
+    }
+  };
+  // useEffect(() => {
+  //   fetchArticles();
+  // }, []);
 
   const processArticle = async (article) => {
     try {
@@ -210,23 +210,24 @@ export default function Index() {
     }
   };
 
-const handleReadMore = (article: NewsArticle) => {
-  setSelectedArticle(article);
-  Alert.alert(
-    "Read More?",
-    "Do you want to read the full article?",
-    [
-      { text: "No", onPress: () => setShowFullArticle(false) },
-      { text: "Yes", onPress: () => setShowFullArticle(true) }
-    ]
-  );
-};
+  const handleReadMore = async (article: NewsArticle) => {
+    setSelectedArticle(article);
+    Alert.alert(
+      "Read More?",
+      "Do you want to read the full article?",
+      [
+        { text: "No", onPress: () => setShowFullArticle(false) },
+        { text: "Yes", onPress: () => setShowFullArticle(true) }
+      ]
+    );
+    if(showFullArticle) await processArticle(article);
+  };
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={[styles.container, themeContainerStyle]}> 
+      <SafeAreaView style={[styles.container, themeContainerStyle]}>
         <Text style={[themeTextStyle, styles.titleText]}>News Reader</Text>
-        
+  
         <Text style={themeTextStyle}>Search by Source:</Text>
         <TextInput
           style={styles.input}
@@ -234,7 +235,7 @@ const handleReadMore = (article: NewsArticle) => {
           onChangeText={setSource}
           value={source}
         />
-
+  
         <Text style={themeTextStyle}>Search by Query:</Text>
         <TextInput
           style={styles.input}
@@ -242,34 +243,63 @@ const handleReadMore = (article: NewsArticle) => {
           onChangeText={setQuery}
           value={query}
         />
-
+  
         <Button title="Search" onPress={fetchArticles} />
-        
-        {articles.length > 0 ? (
-          <FlatList
-            data={articles}
-            keyExtractor={(item) => item.title}
-            renderItem={({ item }) => (
-              <View>
-                <Text style={themeTextStyle} onPress={() => handleReadMore(item)}>
-                  {item.title} ({item.source.name})
-                </Text>
-                <Text style={themeTextStyle}>{item.description}</Text>
-              </View>
-            )}
-          />
-        ) : (
-          <Text style={themeTextStyle}>No articles found</Text>
+  
+        {jsonResponse?.length > 0 && (
+          <Text style={themeTextStyle}>
+            {jsonResponse.length} articles loaded.
+          </Text>
         )}
-
+  
+        <TextInput
+          style={styles.input}
+          keyboardType="numeric"
+          placeholder="Enter article index"
+          value={articleIndex.toString()}
+          onChangeText={(text) => setArticleIndex(Number(text))}
+        />
+  
+        <Button
+          title="Load Article"
+          onPress={() => {
+            if (!jsonResponse) {
+              setError('Articles not loaded yet.');
+              return;
+            }
+  
+            if (
+              articleIndex < 0 ||
+              articleIndex >= jsonResponse.length
+            ) {
+              setError(`Article index ${articleIndex} out of range.`);
+              return;
+            }
+  
+            setError(null);
+            setLoading(true);
+            processArticle(jsonResponse[articleIndex]);
+          }}
+        />
+  
+        {error && <Text style={themeTextStyle}>{error}</Text>}
+  
+        {loading && <Text style={themeTextStyle}>Loading...</Text>}
+  
+        {content !== '' && (
+          <ScrollView contentContainerStyle={styles.contentContainer}>
+            <Text style={themeTextStyle}>{content}</Text>
+          </ScrollView>
+        )}
+  
         {selectedArticle && showFullArticle && (
-          <View>
-            <Text style={themeTextStyle}>{selectedArticle.content}</Text>
+          <View style={styles.contentContainer}>
+            <Text style={themeTextStyle}>{content}</Text>
           </View>
         )}
       </SafeAreaView>
     </SafeAreaProvider>
-  );
+  );  
 }
 
 const styles = StyleSheet.create({
