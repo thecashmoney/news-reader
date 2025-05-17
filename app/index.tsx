@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, useColorScheme, Button, FlatList, TextInput, Alert } from 'react-native';
+import { View, ScrollView, Text, StyleSheet, useColorScheme, Button, FlatList, TextInput, Keyboard } from 'react-native';
 import axios from 'axios';
 import HTMLParser from 'html-parse-stringify';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
@@ -218,6 +218,8 @@ export default function Index() {
           placeholder="Enter source name"
           onChangeText={setSource}
           value={source}
+          onSubmitEditing={Keyboard.dismiss}
+          returnKeyType="done"
         />
 
         <Text style={themeTextStyle}>Search by Query:</Text>
@@ -226,14 +228,18 @@ export default function Index() {
           placeholder="Enter search term"
           onChangeText={setQuery}
           value={query}
+          onSubmitEditing={Keyboard.dismiss}
+          returnKeyType="done"
         />
 
         <Button title="Search" onPress={fetchArticles} />
+
         {jsonResponse && jsonResponse.length === 0 && (
           <Text style={themeTextStyle}>
             There are no articles on this topic from today's headlines.
           </Text>
         )}
+
         {jsonResponse?.length > 0 && (
           <>
             <Text style={themeTextStyle}>{jsonResponse.length} articles found:</Text>
@@ -257,6 +263,8 @@ export default function Index() {
               placeholder="Enter article index to load"
               value={articleIndex.toString()}
               onChangeText={(text) => setArticleIndex(Number(text))}
+              onSubmitEditing={Keyboard.dismiss}
+              returnKeyType="done"
             />
 
             <Button
