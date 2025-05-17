@@ -19,7 +19,6 @@ export default function Index() {
   const [error, setError] = useState<string | null>(null);
   const [content, setContent] = useState('');
   const [articleIndex, setArticleIndex] = useState(5);
-  const NEWS_API_KEY = process.env.EXPO_PUBLIC_NEWS_API_KEY;
   const colorScheme = useColorScheme();
   const [source, setSource] = useState<string>("");
   const [query, setQuery] = useState<string>("");
@@ -30,12 +29,12 @@ export default function Index() {
   const themeTextStyle = colorScheme === 'light' ? styles.lightThemeText : styles.darkThemeText;
   const themeContainerStyle = colorScheme === 'light' ? styles.lightContainer : styles.darkContainer;
   const fetchArticles = async () => {
-    const url =
-      'https://newsapi.org/v2/top-headlines?' +
-      (source ? ('sources=' + source.toLowerCase() + '&') : '') +
-      (query ? ('q=' + query.toLowerCase() + '&') : '') +
-      ((!source && !query) ? 'country=us&': '') +
-      `apiKey=${NEWS_API_KEY}`;
+    const url = `https://getnews-px5bnsfj3q-uc.a.run.app` +
+      (!source && !query ? "" : "?") +
+      (source ? `source=${source}` : "") +
+      (source && query ? "&" : "") +
+      (query ? `q=${query}` : "");
+      console.log(url);
     try {
       const response = await axios.get(url);
 

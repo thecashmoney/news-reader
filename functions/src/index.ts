@@ -22,7 +22,7 @@ import {defineSecret} from "firebase-functions/params";
 
 const newsAPIKey = defineSecret("NEWS_API_KEY");
 
-exports.getNews = onRequest(async (req, res) => {
+exports.getNews = onRequest({secrets: [newsAPIKey]}, async (req, res) => {
   const source = req.query.source;
   const query = req.query.q;
 
