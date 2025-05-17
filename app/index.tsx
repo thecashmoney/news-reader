@@ -247,55 +247,61 @@ export default function Index() {
         <Button title="Search" onPress={fetchArticles} />
   
         {jsonResponse?.length > 0 && (
-          <Text style={themeTextStyle}>
-            {jsonResponse.length} articles loaded.
-          </Text>
+          <>
+            <Text style={themeTextStyle}>{jsonResponse.length} articles found:</Text>
+            <FlatList
+              data={jsonResponse}
+              keyExtractor={(item, index) => item.title + index}
+              renderItem={({ item, index }) => (
+                <View style={{ marginVertical: 10 }}>
+                  <Text style={[themeTextStyle, { fontWeight: 'bold' }]}>
+                    [{index}] {item.title} ({item.source.name})
+                  </Text>
+                  {item.description && (
+                    <Text style={themeTextStyle}>{item.description}</Text>
+                  )}
+                </View>
+              )}
+            />
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              placeholder="Enter article index to load"
+              value={articleIndex.toString()}
+              onChangeText={(text) => setArticleIndex(Number(text))}
+            />
+  
+            <Button
+              title="Load Article"
+              onPress={() => {
+                if (!jsonResponse) {
+                  setError('Articles not loaded yet.');
+                  return;
+                }
+  
+                if (
+                  articleIndex < 0 ||
+                  articleIndex >= jsonResponse.length
+                ) {
+                  setError(`Article index ${articleIndex} out of range.`);
+                  return;
+                }
+  
+                setError(null);
+                setLoading(true);
+                processArticle(jsonResponse[articleIndex]);
+              }}
+            />
+          </>
         )}
   
-        <TextInput
-          style={styles.input}
-          keyboardType="numeric"
-          placeholder="Enter article index"
-          value={articleIndex.toString()}
-          onChangeText={(text) => setArticleIndex(Number(text))}
-        />
-  
-        <Button
-          title="Load Article"
-          onPress={() => {
-            if (!jsonResponse) {
-              setError('Articles not loaded yet.');
-              return;
-            }
-  
-            if (
-              articleIndex < 0 ||
-              articleIndex >= jsonResponse.length
-            ) {
-              setError(`Article index ${articleIndex} out of range.`);
-              return;
-            }
-  
-            setError(null);
-            setLoading(true);
-            processArticle(jsonResponse[articleIndex]);
-          }}
-        />
-  
         {error && <Text style={themeTextStyle}>{error}</Text>}
-  
         {loading && <Text style={themeTextStyle}>Loading...</Text>}
   
         {content !== '' && (
           <ScrollView contentContainerStyle={styles.contentContainer}>
             <Text style={themeTextStyle}>{content}</Text>
           </ScrollView>
-        )}
-  
-        {selectedArticle && showFullArticle && (
-          <View style={styles.contentContainer}>
-            <Text style={themeTextStyle}>{content}</Text>
-          </View>
         )}
       </SafeAreaView>
     </SafeAreaProvider>
