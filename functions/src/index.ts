@@ -26,7 +26,7 @@ exports.getNews = onRequest({secrets: [newsAPIKey]}, async (req, res) => {
   const source = req.query.source;
   const query = req.query.q;
 
-  const url = "https://newsapi.org/v2/top-headlines?" +
+  const url = "https://newsapi.org/v2/top-headlines?language=en&" +
     (source ? ("sources=" + source + "&") : "") +
     (query ? ("q=" + query + "&") : "") +
     (!source && !query ? "country=us&" : "") +

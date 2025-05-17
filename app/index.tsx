@@ -31,17 +31,16 @@ export default function Index() {
   const fetchArticles = async () => {
     const url = `https://getnews-px5bnsfj3q-uc.a.run.app` +
       (!source && !query ? "" : "?") +
-      (source ? `source=${source}` : "") +
+      (source ? `source=${source.toLowerCase().replace(/\s+/g, '-')}` : "") +
       (source && query ? "&" : "") +
       (query ? `q=${query}` : "");
-      console.log(url);
+    console.log(url);
     try {
       const response = await axios.get(url);
 
       if (
         response.data &&
-        response.data.articles &&
-        response.data.articles.length > 0
+        response.data.articles
       ) {
         setJsonResponse(response.data.articles); // Save all articles
         console.log(jsonResponse);
@@ -51,9 +50,8 @@ export default function Index() {
       console.error('Error fetching articles:', error);
     }
   };
-  // useEffect(() => {
-  //   fetchArticles();
-  // }, []);
+
+
 
   const processArticle = async (article) => {
     try {
@@ -209,24 +207,11 @@ export default function Index() {
     }
   };
 
-  const handleReadMore = async (article: NewsArticle) => {
-    setSelectedArticle(article);
-    Alert.alert(
-      "Read More?",
-      "Do you want to read the full article?",
-      [
-        { text: "No", onPress: () => setShowFullArticle(false) },
-        { text: "Yes", onPress: () => setShowFullArticle(true) }
-      ]
-    );
-    if(showFullArticle) await processArticle(article);
-  };
-
   return (
     <SafeAreaProvider>
       <SafeAreaView style={[styles.container, themeContainerStyle]}>
         <Text style={[themeTextStyle, styles.titleText]}>News Reader</Text>
-  
+
         <Text style={themeTextStyle}>Search by Source:</Text>
         <TextInput
           style={styles.input}
@@ -234,7 +219,7 @@ export default function Index() {
           onChangeText={setSource}
           value={source}
         />
-  
+
         <Text style={themeTextStyle}>Search by Query:</Text>
         <TextInput
           style={styles.input}
@@ -242,9 +227,13 @@ export default function Index() {
           onChangeText={setQuery}
           value={query}
         />
-  
+
         <Button title="Search" onPress={fetchArticles} />
-  
+        {jsonResponse && jsonResponse.length === 0 && (
+          <Text style={themeTextStyle}>
+            There are no articles on this topic from today's headlines.
+          </Text>
+        )}
         {jsonResponse?.length > 0 && (
           <>
             <Text style={themeTextStyle}>{jsonResponse.length} articles found:</Text>
@@ -269,7 +258,7 @@ export default function Index() {
               value={articleIndex.toString()}
               onChangeText={(text) => setArticleIndex(Number(text))}
             />
-  
+
             <Button
               title="Load Article"
               onPress={() => {
@@ -277,7 +266,7 @@ export default function Index() {
                   setError('Articles not loaded yet.');
                   return;
                 }
-  
+
                 if (
                   articleIndex < 0 ||
                   articleIndex >= jsonResponse.length
@@ -285,7 +274,7 @@ export default function Index() {
                   setError(`Article index ${articleIndex} out of range.`);
                   return;
                 }
-  
+
                 setError(null);
                 setLoading(true);
                 processArticle(jsonResponse[articleIndex]);
@@ -293,10 +282,10 @@ export default function Index() {
             />
           </>
         )}
-  
+
         {error && <Text style={themeTextStyle}>{error}</Text>}
         {loading && <Text style={themeTextStyle}>Loading...</Text>}
-  
+
         {content !== '' && (
           <ScrollView contentContainerStyle={styles.contentContainer}>
             <Text style={themeTextStyle}>{content}</Text>
@@ -304,7 +293,7 @@ export default function Index() {
         )}
       </SafeAreaView>
     </SafeAreaProvider>
-  );  
+  );
 }
 
 const styles = StyleSheet.create({
