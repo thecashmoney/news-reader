@@ -1,8 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { ScrollView, Text, Button, TextInput, StyleSheet, useColorScheme } from 'react-native';
+import { ScrollView, Text, StyleSheet, useColorScheme, Button, FlatList, TextInput, Alert } from 'react-native';
 import axios from 'axios';
 import HTMLParser from 'html-parse-stringify';
-import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
+import {  SafeAreaView, SafeAreaProvider  } from 'react-native-safe-area-context';
+
+// Define the NewsArticle type
+type NewsArticle = {
+  source: { name: string };
+  title: string;
+  description: string;
+  content: string;
+};
 import he from 'he';
 
 export default function Index() {
@@ -14,14 +22,20 @@ export default function Index() {
   const NEWS_API_KEY = process.env.EXPO_PUBLIC_NEWS_API_KEY;
 
   const colorScheme = useColorScheme();
+  const [source, setSource] = useState<string>("");
+  const [query, setQuery] = useState<string>("");
+  const [articles, setArticles] = useState<NewsArticle[]>([]);
+  const [selectedArticle, setSelectedArticle] = useState<NewsArticle | null>(null);
+  const [showFullArticle, setShowFullArticle] = useState<boolean>(false);
+
   const themeTextStyle = colorScheme === 'light' ? styles.lightThemeText : styles.darkThemeText;
   const themeContainerStyle = colorScheme === 'light' ? styles.lightContainer : styles.darkContainer;
-
   useEffect(() => {
     const fetchArticles = async () => {
       const url =
         'https://newsapi.org/v2/top-headlines?' +
-        'country=us&' +
+        (source ? ('sources='+source.toLowerCase()+'&') : '') +
+        (query ? ('q='+query.toLowerCase()+'&') : '') +
         `apiKey=${NEWS_API_KEY}`;
 
       try {
@@ -40,8 +54,6 @@ export default function Index() {
         console.error('Error fetching articles:', error);
       }
     };
-
-    fetchArticles();
   }, []);
 
   const processArticle = async (article) => {
@@ -198,49 +210,62 @@ export default function Index() {
     }
   };
 
+const handleReadMore = (article: NewsArticle) => {
+  setSelectedArticle(article);
+  Alert.alert(
+    "Read More?",
+    "Do you want to read the full article?",
+    [
+      { text: "No", onPress: () => setShowFullArticle(false) },
+      { text: "Yes", onPress: () => setShowFullArticle(true) }
+    ]
+  );
+};
+
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={[styles.container, themeContainerStyle]}>
+      <SafeAreaView style={[styles.container, themeContainerStyle]}> 
         <Text style={[themeTextStyle, styles.titleText]}>News Reader</Text>
-        {loading ? (
-          <Text>Loading...</Text>
-        ) : error ? (
-          <Text>Error: {error}</Text>
+        
+        <Text style={themeTextStyle}>Search by Source:</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Enter source name"
+          onChangeText={setSource}
+          value={source}
+        />
+
+        <Text style={themeTextStyle}>Search by Query:</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Enter search term"
+          onChangeText={setQuery}
+          value={query}
+        />
+
+        <Button title="Search" onPress={fetchArticles} />
+        
+        {articles.length > 0 ? (
+          <FlatList
+            data={articles}
+            keyExtractor={(item) => item.title}
+            renderItem={({ item }) => (
+              <View>
+                <Text style={themeTextStyle} onPress={() => handleReadMore(item)}>
+                  {item.title} ({item.source.name})
+                </Text>
+                <Text style={themeTextStyle}>{item.description}</Text>
+              </View>
+            )}
+          />
         ) : (
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 10 }}>
-            <TextInput
-              style={{
-                borderWidth: 1,
-                borderColor: 'gray',
-                padding: 8,
-                marginVertical: 10,
-                borderRadius: 6,
-              }}
-              keyboardType="numeric"
-              placeholder="Enter article index"
-              onChangeText={(text) => setArticleIndex(Number(text))}
-            />
+          <Text style={themeTextStyle}>No articles found</Text>
+        )}
 
-            <Button
-              title="Load Article"
-              onPress={() => {
-                if (!jsonResponse) {
-                  setError("Articles not loaded yet.");
-                  return;
-                }
-
-                if (articleIndex < 0 || articleIndex >= jsonResponse.length) {
-                  setError(`Article index ${articleIndex} out of range.`);
-                  return;
-                }
-
-                setError(null); // clear previous error
-                setLoading(true);
-                processArticle(jsonResponse[articleIndex]);
-              }}
-            />
-            <Text style={[themeTextStyle]}>{content}</Text>
-          </ScrollView>
+        {selectedArticle && showFullArticle && (
+          <View>
+            <Text style={themeTextStyle}>{selectedArticle.content}</Text>
+          </View>
         )}
       </SafeAreaView>
     </SafeAreaProvider>
