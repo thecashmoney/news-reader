@@ -1,6 +1,8 @@
-import { Text, View, StyleSheet, useColorScheme, Button, FlatList, TextInput, Alert } from "react-native";
-import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
-import { useState } from "react";
+import React, { useState, useEffect } from 'react';
+import { ScrollView, Text, StyleSheet, useColorScheme, Button, FlatList, TextInput, Alert } from 'react-native';
+import axios from 'axios';
+import HTMLParser from 'html-parse-stringify';
+import {  SafeAreaView, SafeAreaProvider  } from 'react-native-safe-area-context';
 
 // Define the NewsArticle type
 type NewsArticle = {
@@ -9,8 +11,16 @@ type NewsArticle = {
   description: string;
   content: string;
 };
+import he from 'he';
 
 export default function Index() {
+  const [jsonResponse, setJsonResponse] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [content, setContent] = useState('');
+  const [articleIndex, setArticleIndex] = useState(5);
+  const NEWS_API_KEY = process.env.EXPO_PUBLIC_NEWS_API_KEY;
+
   const colorScheme = useColorScheme();
   const [source, setSource] = useState<string>("");
   const [query, setQuery] = useState<string>("");
@@ -20,42 +30,197 @@ export default function Index() {
 
   const themeTextStyle = colorScheme === 'light' ? styles.lightThemeText : styles.darkThemeText;
   const themeContainerStyle = colorScheme === 'light' ? styles.lightContainer : styles.darkContainer;
+  useEffect(() => {
+    const fetchArticles = async () => {
+      const url =
+        'https://newsapi.org/v2/top-headlines?' +
+        (source ? ('sources='+source.toLowerCase()+'&') : '') +
+        (query ? ('q='+query.toLowerCase()+'&') : '') +
+        `apiKey=${NEWS_API_KEY}`;
 
-  const fetchArticles = () => {
-    const sampleData: NewsArticle[] = [
-      {
-        source: { name: "CNN" },
-        title: "Breaking News: AI Advances",
-        description: "New AI technology is changing the world.",
-        content: "Full article content about AI technology and its impacts...",
-      },
-      {
-        source: { name: "BBC" },
-        title: "SpaceX's Latest Launch",
-        description: "SpaceX successfully launches another rocket.",
-        content: "Full article content about SpaceX's recent launch and mission details...",
+      try {
+        const response = await axios.get(url);
+
+        if (
+          response.data &&
+          response.data.articles &&
+          response.data.articles.length > 0
+        ) {
+          setJsonResponse(response.data.articles); // Save all articles
+          console.log(jsonResponse);
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Error fetching articles:', error);
       }
-    ];
-    
-    const filteredArticles = sampleData.filter(article => 
-      (source ? article.source.name.toLowerCase().includes(source.toLowerCase()) : true) &&
-      (query ? article.title.toLowerCase().includes(query.toLowerCase()) : true)
-    );
-    
-    setArticles(filteredArticles);
+    };
+  }, []);
+
+  const processArticle = async (article) => {
+    try {
+      const articleResponse = await axios.get(article.url);
+      const parsedHTML = HTMLParser.parse(articleResponse.data);
+      console.log(JSON.stringify(parsedHTML));
+
+      const decodeHtmlEntities = (str) => he.decode(str);
+
+      const isShareElement = (text) => {
+        const shareKeywords = [
+          'share',
+          'facebook',
+          'copy link',
+          'copied',
+          'print',
+          'email',
+          'linkedin',
+          'bluesky',
+          'flipboard',
+          'pinterest',
+          'reddit',
+        ];
+        const trimmed = text.trim().toLowerCase();
+        return shareKeywords.some(
+          (keyword) => trimmed === keyword || trimmed.startsWith(keyword)
+        );
+      };
+
+      const extractVisibleText = (root) => {
+        const blacklistTags = new Set([
+          'script',
+          'style',
+          'nav',
+          'footer',
+          'aside',
+          'noscript',
+          'form',
+          'button',
+        ]);
+
+        const blacklistClassFragments = [
+          'metadata',
+          'timestamp',
+          'author',
+          'related',
+          'btn',
+          'footer',
+          'header',
+          'byline',
+          'caption',
+          'promo',
+          'ad',
+          'nav',
+          'share',
+          'social',
+        ];
+
+        const hasBlacklistedClass = (attrs = {}) => {
+          const classAttr = attrs.class || '';
+          return blacklistClassFragments.some((cls) =>
+            classAttr.toLowerCase().split(/\s+/).some((c) => c.includes(cls))
+          );
+        };
+
+        const metaContent = [];
+
+        const walk = (node) => {
+          if (!node) return [];
+
+          if (Array.isArray(node)) return node.flatMap(walk);
+
+          if (node.type === 'text') {
+            const text = node.content?.trim();
+            if (text && text.length > 1 && !isShareElement(text)) {
+              return [text];
+            }
+            return [];
+          }
+
+          if (node.type === 'tag') {
+            const tagName = node.name?.toLowerCase?.();
+            console.log(`📦 TAG <${tagName}> [class="${node.attrs?.class || ''}"]`);
+
+            if (blacklistTags.has(tagName)) {
+              console.log(`⛔ Skipping tag <${tagName}> (blacklisted tag)`);
+              return [];
+            }
+
+            if (hasBlacklistedClass(node.attrs)) {
+              console.log(
+                `⛔ Skipping tag <${tagName}> (blacklisted class: ${node.attrs?.class})`
+              );
+              return [];
+            }
+
+            if (
+              tagName === 'meta' &&
+              node.attrs?.name?.toLowerCase() === 'description' &&
+              node.attrs?.content
+            ) {
+              console.log(`✨ META Description: ${node.attrs.content}`);
+              metaContent.push(node.attrs.content.trim());
+            }
+
+            const childText = (node.children || []).flatMap(walk);
+
+            if (['p', 'section', 'article', 'div'].includes(tagName)) {
+              const preview = childText.join(' ').slice(0, 100);
+              console.log(`🧾 ${tagName.toUpperCase()} Preview:`, preview);
+            }
+
+            const isParagraph = ['p', 'h1', 'h2', 'h3', 'li', 'blockquote', 'article', 'section'].includes(tagName);
+            return isParagraph
+              ? ['\n' + childText.join(' ').trim()]
+              : childText;
+          }
+
+          return [];
+        };
+
+        const textParts = walk(root);
+        const combined = [...metaContent, ...textParts];
+        const rawText = combined.join('\n').replace(/\n{2,}/g, '\n\n').trim();
+        return decodeHtmlEntities(rawText);
+      };
+
+      const findBodyTag = (nodes) => {
+        for (const node of nodes) {
+          if (node.type === 'tag' && node.name === 'body') return node;
+          if (node.children && node.children.length > 0) {
+            const found = findBodyTag(node.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      const bodyNode = findBodyTag(parsedHTML);
+
+      if (bodyNode) {
+        const articleText = extractVisibleText(bodyNode);
+        console.log('✅ Cleaned Article:\n', articleText);
+        setContent(articleText);
+      } else {
+        console.warn('⚠️ <body> tag not found!');
+        setContent('Could not find article content.');
+      }
+
+      setLoading(false);
+    } catch (error) {
+      console.error('Error processing article:', error);
+    }
   };
 
-  const handleReadMore = (article: NewsArticle) => {
-    setSelectedArticle(article);
-    Alert.alert(
-      "Read More?",
-      "Do you want to read the full article?",
-      [
-        { text: "No", onPress: () => setShowFullArticle(false) },
-        { text: "Yes", onPress: () => setShowFullArticle(true) }
-      ]
-    );
-  };
+const handleReadMore = (article: NewsArticle) => {
+  setSelectedArticle(article);
+  Alert.alert(
+    "Read More?",
+    "Do you want to read the full article?",
+    [
+      { text: "No", onPress: () => setShowFullArticle(false) },
+      { text: "Yes", onPress: () => setShowFullArticle(true) }
+    ]
+  );
+};
 
   return (
     <SafeAreaProvider>
@@ -110,7 +275,8 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: "center",
+    alignItems: 'center',
+    paddingHorizontal: 20,
   },
   lightContainer: {
     backgroundColor: '#D0D0D0',
@@ -133,8 +299,14 @@ const styles = StyleSheet.create({
     height: 40,
     borderColor: 'gray',
     borderWidth: 1,
-    margin: 10,
-    padding: 5,
+    marginBottom: 20,
+    paddingLeft: 8,
     width: '80%',
-  }
+  },
+  contentContainer: {
+    marginTop: 20,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'gray',
+  },
 });
