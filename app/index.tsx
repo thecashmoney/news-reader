@@ -1,16 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import {
-  View,
-  ScrollView,
-  Text,
-  StyleSheet,
-  useColorScheme,
-  Button,
-  FlatList,
-  TextInput,
-  Keyboard,
-  Alert,
-} from 'react-native';
+import { View, ScrollView, Text, StyleSheet, useColorScheme, FlatList } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import * as Speech from 'expo-speech';
@@ -19,43 +8,45 @@ import HTMLParser from 'html-parse-stringify';
 import he from 'he';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 
-export default function Index() {
+
+export default function App() {
   const [recording, setRecording] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [step, setStep] = useState<'intro' | 'topic' | 'outlet' | 'read'>('intro');
+  const [step, setStep] = useState<'topic' | 'outlet' | 'read'>('topic');
   const [query, setQuery] = useState('');
   const [source, setSource] = useState('');
   const [jsonResponse, setJsonResponse] = useState(null);
   const [content, setContent] = useState('');
   const [articleIndex, setArticleIndex] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [transcriptionDisplay, setTranscriptionDisplay] = useState('');
   const colorScheme = useColorScheme();
+
 
   useEffect(() => {
     (async () => {
       const { granted } = await Audio.requestPermissionsAsync();
       if (!granted) {
-        Alert.alert('Permission to access microphone was denied');
+        alert('Permission to access microphone was denied');
         return;
       }
       askQuestion('What would you like to read about today?', 'topic');
     })();
   }, []);
 
-  const askQuestion = (prompt: string, nextStep: 'topic' | 'outlet' | 'read') => {
+
+  const askQuestion = (prompt, nextStep) => {
     setStep(nextStep);
     Speech.speak(prompt, {
-      onDone: () => {
-        setTimeout(async () => {
-          await safeStartRecording();
-          setTimeout(() => {
-            stopAndTranscribe(nextStep);
-          }, 5000);
-        }, 500);
+      onDone: async () => {
+        await safeStartRecording();
+        setTimeout(() => {
+          stopAndTranscribe(nextStep);
+        }, 5000);
       },
     });
   };
+
 
   const safeStartRecording = async () => {
     if (recording) {
@@ -67,81 +58,93 @@ export default function Index() {
     await startRecording();
   };
 
+
   const startRecording = async () => {
     try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
       const newRecording = new Audio.Recording();
       await newRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       await newRecording.startAsync();
       setRecording(newRecording);
       setIsRecording(true);
     } catch (err) {
-      console.error('Failed to start recording', err);
+      console.error('Recording start error:', err);
     }
   };
+
 
   const stopAndTranscribe = async (currentStep) => {
     try {
       if (!recording) return;
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
-      setIsRecording(false);
       setRecording(null);
-
+      setIsRecording(false);
       if (!uri) return;
 
-      const uploadRes = await FileSystem.uploadAsync(
-        'https://api.assemblyai.com/v2/upload',
-        uri,
-        {
-          httpMethod: 'POST',
-          headers: {
-            authorization: 'YOUR_ASSEMBLYAI_API_KEY',
-          },
-          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-        }
-      );
 
-      const uploadData = JSON.parse(uploadRes.body);
-      const audioUrl = uploadData.upload_url;
+      const uploadRes = await FileSystem.uploadAsync('https://api.assemblyai.com/v2/upload', uri, {
+        httpMethod: 'POST',
+        headers: { authorization: 'YOUR_ASSEMBLYAI_API_KEY' },
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      });
+
+
+      const audioUrl = JSON.parse(uploadRes.body).upload_url;
+
 
       const transcriptRes = await fetch('https://api.assemblyai.com/v2/transcript', {
         method: 'POST',
-        headers: {
-          authorization: 'YOUR_ASSEMBLYAI_API_KEY',
-          'Content-Type': 'application/json',
-        },
+        headers: { authorization: 'YOUR_ASSEMBLYAI_API_KEY', 'Content-Type': 'application/json' },
         body: JSON.stringify({ audio_url: audioUrl }),
       });
 
-      const transcriptData = await transcriptRes.json();
-      const transcriptId = transcriptData.id;
 
-      let completed = false;
-      while (!completed) {
+      const { id: transcriptId } = await transcriptRes.json();
+
+
+      let done = false;
+      while (!done) {
         await new Promise((r) => setTimeout(r, 2000));
-        const pollingRes = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+        const res = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
           headers: { authorization: 'YOUR_ASSEMBLYAI_API_KEY' },
         });
-        const pollingData = await pollingRes.json();
-        if (pollingData.status === 'completed') {
-          const text = pollingData.text;
+        const data = await res.json();
+        if (data.status === 'completed') {
+          const text = data.text;
+          console.log(`📝 Transcribed (${currentStep}):`, text);
+          setTranscriptionDisplay(text);
+
+
           if (currentStep === 'topic') {
             setQuery(text);
             fetchArticles(text, source);
-            askQuestion('Would you like to choose a specific outlet next?', 'outlet');
+            Speech.speak('You said: ' + text, {
+              onDone: () => askQuestion('Would you like to choose a specific outlet?', 'outlet'),
+            });
           } else if (currentStep === 'outlet') {
             setSource(text);
             fetchArticles(query, text);
+            Speech.speak('You said: ' + text, {
+              onDone: () => askQuestion('Say the number of the article you want to hear.', 'read'),
+            });
+          } else if (currentStep === 'read') {
+            Speech.speak('You said: ' + text);
+            const match = text.match(/\d+/);
+            const index = match ? parseInt(match[0], 10) : -1;
+            if (!isNaN(index) && jsonResponse && index < jsonResponse.length) {
+              setArticleIndex(index);
+              await processArticle(jsonResponse[index]);
+              Speech.speak(content || 'Sorry, no content available.');
+            } else {
+              Speech.speak('Invalid number. Please try again.');
+              askQuestion('Please say the number of the article you want to hear.', 'read');
+            }
           }
-          completed = true;
-        } else if (pollingData.status === 'error') {
-          completed = true;
-          console.error('Transcription error:', pollingData.error);
+          done = true;
+        } else if (data.status === 'error') {
+          console.error('Transcription error:', data.error);
+          done = true;
         }
       }
     } catch (err) {
@@ -149,127 +152,92 @@ export default function Index() {
     }
   };
 
-  const fetchArticles = async (q: string, source: string) => {
-    const url = `https://getnews-px5bnsfj3q-uc.a.run.app` +
-      (!source && !q ? '' : '?') +
-      (source ? `source=${source.toLowerCase().replace(/\s+/g, '-')}` : '') +
-      (source && q ? '&' : '') +
-      (q ? `q=${q}` : '');
+
+  const fetchArticles = async (q, s) => {
+    const url = `https://getnews-px5bnsfj3q-uc.a.run.app${s || q ? '?' : ''}${s ? `source=${s.toLowerCase().replace(/\s+/g, '-')}` : ''}${s && q ? '&' : ''}${q ? `q=${q}` : ''}`;
     try {
       setLoading(true);
       const response = await axios.get(url);
       setJsonResponse(response.data.articles);
-    } catch (error) {
-      console.error('Error fetching articles:', error);
+    } catch (err) {
+      console.error('Fetch error:', err);
     } finally {
       setLoading(false);
     }
   };
 
+
   const processArticle = async (article) => {
     try {
-      const articleResponse = await axios.get(article.url);
-      const parsedHTML = HTMLParser.parse(articleResponse.data);
-
-      const decodeHtmlEntities = (str) => he.decode(str);
-
-      const isShareElement = (text) => ['share', 'facebook'].some(k => text.toLowerCase().includes(k));
-
-      const extractVisibleText = (node) => {
+      const res = await axios.get(article.url);
+      const parsed = HTMLParser.parse(res.data);
+      const decode = (str) => he.decode(str);
+      const extractText = (node) => {
         if (!node) return [];
-        if (Array.isArray(node)) return node.flatMap(extractVisibleText);
+        if (Array.isArray(node)) return node.flatMap(extractText);
         if (node.type === 'text') return [node.content?.trim()].filter(Boolean);
-        if (node.type === 'tag' && node.children) return node.children.flatMap(extractVisibleText);
+        if (node.type === 'tag' && node.children) return node.children.flatMap(extractText);
         return [];
       };
-
-      const findBodyTag = (nodes) => {
-        for (const node of nodes) {
-          if (node.type === 'tag' && node.name === 'body') return node;
-          if (node.children?.length) {
-            const found = findBodyTag(node.children);
+      const findBody = (nodes) => {
+        for (const n of nodes) {
+          if (n.type === 'tag' && n.name === 'body') return n;
+          if (n.children?.length) {
+            const found = findBody(n.children);
             if (found) return found;
           }
         }
         return null;
       };
-
-      const bodyNode = findBodyTag(parsedHTML);
-      const rawText = decodeHtmlEntities(extractVisibleText(bodyNode).join('\n'));
-      setContent(rawText);
+      const body = findBody(parsed);
+      setContent(decode(extractText(body).join('\n')));
     } catch (err) {
-      console.error('Error processing article:', err);
+      console.error('Article parsing failed:', err);
     }
   };
 
-  const themeTextStyle = colorScheme === 'light' ? styles.lightThemeText : styles.darkThemeText;
-  const themeContainerStyle = colorScheme === 'light' ? styles.lightContainer : styles.darkContainer;
+
+  const themeStyle = colorScheme === 'light' ? styles.lightThemeText : styles.darkThemeText;
+  const containerStyle = colorScheme === 'light' ? styles.lightContainer : styles.darkContainer;
+
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={[styles.container, themeContainerStyle]}>
-        <Text style={[themeTextStyle, styles.titleText]}>Voice News Reader</Text>
-        {jsonResponse?.length > 0 && (
-          <>
+      <SafeAreaView style={[styles.container, containerStyle]}>
+        <ScrollView contentContainerStyle={styles.scrollView}>
+          <Text style={[themeStyle, styles.title]}>Voice News Reader</Text>
+          <Text style={themeStyle}>Latest response: {transcriptionDisplay}</Text>
+          {jsonResponse?.length > 0 && (
             <FlatList
               data={jsonResponse}
               keyExtractor={(item, index) => item.title + index}
               renderItem={({ item, index }) => (
                 <View style={{ marginVertical: 10 }}>
-                  <Text style={[themeTextStyle, { fontWeight: 'bold' }]}>[{index}] {item.title}</Text>
+                  <Text style={[themeStyle, { fontWeight: 'bold' }]}>[{index}] {item.title}</Text>
                 </View>
               )}
             />
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              placeholder="Enter article index to load"
-              value={articleIndex.toString()}
-              onChangeText={(text) => setArticleIndex(Number(text))}
-            />
-            <Button
-              title="Load Article"
-              onPress={() => {
-                if (!jsonResponse || articleIndex < 0 || articleIndex >= jsonResponse.length) {
-                  setError('Invalid article index');
-                  return;
-                }
-                processArticle(jsonResponse[articleIndex]);
-              }}
-            />
-          </>
-        )}
-        {error && <Text style={themeTextStyle}>{error}</Text>}
-        {loading && <Text style={themeTextStyle}>Loading...</Text>}
-        {content !== '' && (
-          <ScrollView contentContainerStyle={styles.contentContainer}>
-            <Text style={themeTextStyle}>{content}</Text>
-          </ScrollView>
-        )}
+          )}
+          {loading && <Text style={themeStyle}>Loading...</Text>}
+          {content !== '' && (
+            <ScrollView contentContainerStyle={styles.contentContainer}>
+              <Text style={themeStyle}>{content}</Text>
+            </ScrollView>
+          )}
+        </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
   );
 }
 
+
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', paddingHorizontal: 20 },
-  lightContainer: { backgroundColor: '#D0D0D0' },
-  darkContainer: { backgroundColor: '#353636' },
-  lightThemeText: { color: '#353636' },
-  darkThemeText: { color: '#D0D0D0' },
-  titleText: { paddingTop: 20, fontWeight: 'bold', fontSize: 30 },
-  input: {
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
-    marginBottom: 20,
-    paddingLeft: 8,
-    width: '80%',
-  },
-  contentContainer: {
-    marginTop: 20,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: 'gray',
-  },
+  container: { flex: 1, alignItems: 'center' },
+  scrollView: { paddingHorizontal: 20, paddingBottom: 60 },
+  lightContainer: { backgroundColor: '#F2F2F2' },
+  darkContainer: { backgroundColor: '#1C1C1E' },
+  lightThemeText: { color: '#1C1C1E' },
+  darkThemeText: { color: '#F2F2F2' },
+  title: { fontSize: 30, fontWeight: 'bold', paddingTop: 20 },
+  contentContainer: { marginTop: 20, padding: 10, borderWidth: 1, borderColor: 'gray' },
 });
