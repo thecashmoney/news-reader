@@ -1,188 +1,192 @@
-import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Text, StyleSheet, useColorScheme, Button, FlatList, TextInput, Keyboard } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  ScrollView,
+  Text,
+  StyleSheet,
+  useColorScheme,
+  Button,
+  FlatList,
+  TextInput,
+  Keyboard,
+  Alert,
+} from 'react-native';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
+import * as Speech from 'expo-speech';
 import axios from 'axios';
 import HTMLParser from 'html-parse-stringify';
+import he from 'he';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 
-// Define the NewsArticle type
-type NewsArticle = {
-  source: { name: string };
-  title: string;
-  description: string;
-  content: string;
-};
-import he from 'he';
-
 export default function Index() {
+  const [recording, setRecording] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [step, setStep] = useState<'intro' | 'topic' | 'outlet' | 'read'>('intro');
+  const [query, setQuery] = useState('');
+  const [source, setSource] = useState('');
   const [jsonResponse, setJsonResponse] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [content, setContent] = useState('');
-  const [articleIndex, setArticleIndex] = useState(5);
+  const [articleIndex, setArticleIndex] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const colorScheme = useColorScheme();
-  const [source, setSource] = useState<string>("");
-  const [query, setQuery] = useState<string>("");
-  const [articles, setArticles] = useState<NewsArticle[]>([]);
-  const [selectedArticle, setSelectedArticle] = useState<NewsArticle | null>(null);
-  const [showFullArticle, setShowFullArticle] = useState<boolean>(false);
 
-  const themeTextStyle = colorScheme === 'light' ? styles.lightThemeText : styles.darkThemeText;
-  const themeContainerStyle = colorScheme === 'light' ? styles.lightContainer : styles.darkContainer;
-  const fetchArticles = async () => {
-    const url = `https://getnews-px5bnsfj3q-uc.a.run.app` +
-      (!source && !query ? "" : "?") +
-      (source ? `source=${source.toLowerCase().replace(/\s+/g, '-')}` : "") +
-      (source && query ? "&" : "") +
-      (query ? `q=${query}` : "");
-    console.log(url);
-    try {
-      const response = await axios.get(url);
-
-      if (
-        response.data &&
-        response.data.articles
-      ) {
-        setJsonResponse(response.data.articles); // Save all articles
-        console.log(jsonResponse);
-        setLoading(false);
+  useEffect(() => {
+    (async () => {
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) {
+        Alert.alert('Permission to access microphone was denied');
+        return;
       }
-    } catch (error) {
-      console.error('Error fetching articles:', error);
+      askQuestion('What would you like to read about today?', 'topic');
+    })();
+  }, []);
+
+  const askQuestion = (prompt: string, nextStep: 'topic' | 'outlet' | 'read') => {
+    setStep(nextStep);
+    Speech.speak(prompt, {
+      onDone: () => {
+        setTimeout(async () => {
+          await safeStartRecording();
+          setTimeout(() => {
+            stopAndTranscribe(nextStep);
+          }, 5000);
+        }, 500);
+      },
+    });
+  };
+
+  const safeStartRecording = async () => {
+    if (recording) {
+      try {
+        await recording.stopAndUnloadAsync();
+      } catch {}
+      setRecording(null);
+    }
+    await startRecording();
+  };
+
+  const startRecording = async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const newRecording = new Audio.Recording();
+      await newRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await newRecording.startAsync();
+      setRecording(newRecording);
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Failed to start recording', err);
     }
   };
 
+  const stopAndTranscribe = async (currentStep) => {
+    try {
+      if (!recording) return;
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setIsRecording(false);
+      setRecording(null);
 
+      if (!uri) return;
+
+      const uploadRes = await FileSystem.uploadAsync(
+        'https://api.assemblyai.com/v2/upload',
+        uri,
+        {
+          httpMethod: 'POST',
+          headers: {
+            authorization: 'YOUR_ASSEMBLYAI_API_KEY',
+          },
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        }
+      );
+
+      const uploadData = JSON.parse(uploadRes.body);
+      const audioUrl = uploadData.upload_url;
+
+      const transcriptRes = await fetch('https://api.assemblyai.com/v2/transcript', {
+        method: 'POST',
+        headers: {
+          authorization: 'YOUR_ASSEMBLYAI_API_KEY',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ audio_url: audioUrl }),
+      });
+
+      const transcriptData = await transcriptRes.json();
+      const transcriptId = transcriptData.id;
+
+      let completed = false;
+      while (!completed) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const pollingRes = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+          headers: { authorization: 'YOUR_ASSEMBLYAI_API_KEY' },
+        });
+        const pollingData = await pollingRes.json();
+        if (pollingData.status === 'completed') {
+          const text = pollingData.text;
+          if (currentStep === 'topic') {
+            setQuery(text);
+            fetchArticles(text, source);
+            askQuestion('Would you like to choose a specific outlet next?', 'outlet');
+          } else if (currentStep === 'outlet') {
+            setSource(text);
+            fetchArticles(query, text);
+          }
+          completed = true;
+        } else if (pollingData.status === 'error') {
+          completed = true;
+          console.error('Transcription error:', pollingData.error);
+        }
+      }
+    } catch (err) {
+      console.error('Transcription failed:', err);
+    }
+  };
+
+  const fetchArticles = async (q: string, source: string) => {
+    const url = `https://getnews-px5bnsfj3q-uc.a.run.app` +
+      (!source && !q ? '' : '?') +
+      (source ? `source=${source.toLowerCase().replace(/\s+/g, '-')}` : '') +
+      (source && q ? '&' : '') +
+      (q ? `q=${q}` : '');
+    try {
+      setLoading(true);
+      const response = await axios.get(url);
+      setJsonResponse(response.data.articles);
+    } catch (error) {
+      console.error('Error fetching articles:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const processArticle = async (article) => {
     try {
       const articleResponse = await axios.get(article.url);
       const parsedHTML = HTMLParser.parse(articleResponse.data);
-      console.log(JSON.stringify(parsedHTML));
 
       const decodeHtmlEntities = (str) => he.decode(str);
 
-      const isShareElement = (text) => {
-        const shareKeywords = [
-          'share',
-          'facebook',
-          'copy link',
-          'copied',
-          'print',
-          'email',
-          'linkedin',
-          'bluesky',
-          'flipboard',
-          'pinterest',
-          'reddit',
-        ];
-        const trimmed = text.trim().toLowerCase();
-        return shareKeywords.some(
-          (keyword) => trimmed === keyword || trimmed.startsWith(keyword)
-        );
-      };
+      const isShareElement = (text) => ['share', 'facebook'].some(k => text.toLowerCase().includes(k));
 
-      const extractVisibleText = (root) => {
-        const blacklistTags = new Set([
-          'script',
-          'style',
-          'nav',
-          'footer',
-          'aside',
-          'noscript',
-          'form',
-          'button',
-        ]);
-
-        const blacklistClassFragments = [
-          'metadata',
-          'timestamp',
-          'author',
-          'related',
-          'btn',
-          'footer',
-          'header',
-          'byline',
-          'caption',
-          'promo',
-          'ad',
-          'nav',
-          'share',
-          'social',
-        ];
-
-        const hasBlacklistedClass = (attrs = {}) => {
-          const classAttr = attrs.class || '';
-          return blacklistClassFragments.some((cls) =>
-            classAttr.toLowerCase().split(/\s+/).some((c) => c.includes(cls))
-          );
-        };
-
-        const metaContent = [];
-
-        const walk = (node) => {
-          if (!node) return [];
-
-          if (Array.isArray(node)) return node.flatMap(walk);
-
-          if (node.type === 'text') {
-            const text = node.content?.trim();
-            if (text && text.length > 1 && !isShareElement(text)) {
-              return [text];
-            }
-            return [];
-          }
-
-          if (node.type === 'tag') {
-            const tagName = node.name?.toLowerCase?.();
-            console.log(`📦 TAG <${tagName}> [class="${node.attrs?.class || ''}"]`);
-
-            if (blacklistTags.has(tagName)) {
-              console.log(`⛔ Skipping tag <${tagName}> (blacklisted tag)`);
-              return [];
-            }
-
-            if (hasBlacklistedClass(node.attrs)) {
-              console.log(
-                `⛔ Skipping tag <${tagName}> (blacklisted class: ${node.attrs?.class})`
-              );
-              return [];
-            }
-
-            if (
-              tagName === 'meta' &&
-              node.attrs?.name?.toLowerCase() === 'description' &&
-              node.attrs?.content
-            ) {
-              console.log(`✨ META Description: ${node.attrs.content}`);
-              metaContent.push(node.attrs.content.trim());
-            }
-
-            const childText = (node.children || []).flatMap(walk);
-
-            if (['p', 'section', 'article', 'div'].includes(tagName)) {
-              const preview = childText.join(' ').slice(0, 100);
-              console.log(`🧾 ${tagName.toUpperCase()} Preview:`, preview);
-            }
-
-            const isParagraph = ['p', 'h1', 'h2', 'h3', 'li', 'blockquote', 'article', 'section'].includes(tagName);
-            return isParagraph
-              ? ['\n' + childText.join(' ').trim()]
-              : childText;
-          }
-
-          return [];
-        };
-
-        const textParts = walk(root);
-        const combined = [...metaContent, ...textParts];
-        const rawText = combined.join('\n').replace(/\n{2,}/g, '\n\n').trim();
-        return decodeHtmlEntities(rawText);
+      const extractVisibleText = (node) => {
+        if (!node) return [];
+        if (Array.isArray(node)) return node.flatMap(extractVisibleText);
+        if (node.type === 'text') return [node.content?.trim()].filter(Boolean);
+        if (node.type === 'tag' && node.children) return node.children.flatMap(extractVisibleText);
+        return [];
       };
 
       const findBodyTag = (nodes) => {
         for (const node of nodes) {
           if (node.type === 'tag' && node.name === 'body') return node;
-          if (node.children && node.children.length > 0) {
+          if (node.children?.length) {
             const found = findBodyTag(node.children);
             if (found) return found;
           }
@@ -191,69 +195,28 @@ export default function Index() {
       };
 
       const bodyNode = findBodyTag(parsedHTML);
-
-      if (bodyNode) {
-        const articleText = extractVisibleText(bodyNode);
-        console.log('✅ Cleaned Article:\n', articleText);
-        setContent(articleText);
-      } else {
-        console.warn('⚠️ <body> tag not found!');
-        setContent('Could not find article content.');
-      }
-
-      setLoading(false);
-    } catch (error) {
-      console.error('Error processing article:', error);
+      const rawText = decodeHtmlEntities(extractVisibleText(bodyNode).join('\n'));
+      setContent(rawText);
+    } catch (err) {
+      console.error('Error processing article:', err);
     }
   };
+
+  const themeTextStyle = colorScheme === 'light' ? styles.lightThemeText : styles.darkThemeText;
+  const themeContainerStyle = colorScheme === 'light' ? styles.lightContainer : styles.darkContainer;
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={[styles.container, themeContainerStyle]}>
-        <Text style={[themeTextStyle, styles.titleText]}>News Reader</Text>
-
-        <Text style={themeTextStyle}>Search by Source:</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter source name"
-          onChangeText={setSource}
-          value={source}
-          onSubmitEditing={Keyboard.dismiss}
-          returnKeyType="done"
-        />
-
-        <Text style={themeTextStyle}>Search by Query:</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter search term"
-          onChangeText={setQuery}
-          value={query}
-          onSubmitEditing={Keyboard.dismiss}
-          returnKeyType="done"
-        />
-
-        <Button title="Search" onPress={fetchArticles} />
-
-        {jsonResponse && jsonResponse.length === 0 && (
-          <Text style={themeTextStyle}>
-            There are no articles on this topic from today's headlines.
-          </Text>
-        )}
-
+        <Text style={[themeTextStyle, styles.titleText]}>Voice News Reader</Text>
         {jsonResponse?.length > 0 && (
           <>
-            <Text style={themeTextStyle}>{jsonResponse.length} articles found:</Text>
             <FlatList
               data={jsonResponse}
               keyExtractor={(item, index) => item.title + index}
               renderItem={({ item, index }) => (
                 <View style={{ marginVertical: 10 }}>
-                  <Text style={[themeTextStyle, { fontWeight: 'bold' }]}>
-                    [{index}] {item.title} ({item.source.name})
-                  </Text>
-                  {item.description && (
-                    <Text style={themeTextStyle}>{item.description}</Text>
-                  )}
+                  <Text style={[themeTextStyle, { fontWeight: 'bold' }]}>[{index}] {item.title}</Text>
                 </View>
               )}
             />
@@ -263,37 +226,21 @@ export default function Index() {
               placeholder="Enter article index to load"
               value={articleIndex.toString()}
               onChangeText={(text) => setArticleIndex(Number(text))}
-              onSubmitEditing={Keyboard.dismiss}
-              returnKeyType="done"
             />
-
             <Button
               title="Load Article"
               onPress={() => {
-                if (!jsonResponse) {
-                  setError('Articles not loaded yet.');
+                if (!jsonResponse || articleIndex < 0 || articleIndex >= jsonResponse.length) {
+                  setError('Invalid article index');
                   return;
                 }
-
-                if (
-                  articleIndex < 0 ||
-                  articleIndex >= jsonResponse.length
-                ) {
-                  setError(`Article index ${articleIndex} out of range.`);
-                  return;
-                }
-
-                setError(null);
-                setLoading(true);
                 processArticle(jsonResponse[articleIndex]);
               }}
             />
           </>
         )}
-
         {error && <Text style={themeTextStyle}>{error}</Text>}
         {loading && <Text style={themeTextStyle}>Loading...</Text>}
-
         {content !== '' && (
           <ScrollView contentContainerStyle={styles.contentContainer}>
             <Text style={themeTextStyle}>{content}</Text>
@@ -305,28 +252,12 @@ export default function Index() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  lightContainer: {
-    backgroundColor: '#D0D0D0',
-  },
-  darkContainer: {
-    backgroundColor: '#353636',
-  },
-  lightThemeText: {
-    color: '#353636',
-  },
-  darkThemeText: {
-    color: '#D0D0D0',
-  },
-  titleText: {
-    paddingTop: 20,
-    fontWeight: 'bold',
-    fontSize: 40,
-  },
+  container: { flex: 1, alignItems: 'center', paddingHorizontal: 20 },
+  lightContainer: { backgroundColor: '#D0D0D0' },
+  darkContainer: { backgroundColor: '#353636' },
+  lightThemeText: { color: '#353636' },
+  darkThemeText: { color: '#D0D0D0' },
+  titleText: { paddingTop: 20, fontWeight: 'bold', fontSize: 30 },
   input: {
     height: 40,
     borderColor: 'gray',
