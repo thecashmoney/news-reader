@@ -37,6 +37,7 @@
     "expo-symbols": "^0.4.4",
     "expo-system-ui": "^5.0.7",
     "expo-web-browser": "^14.1.6",
+    "fast-html-parser": "^1.0.1",
     "he": "^1.2.0",
     "html-parse-stringify": "^3.0.1",
     "jsdom": "^26.1.0",
@@ -52,10 +53,13 @@
     "react-native-screens": "^4.11.1",
     "react-native-voice": "^0.3.0",
     "react-native-web": "^0.20.0",
-    "react-native-webview": "^13.13.5"
+    "react-native-webview": "^13.14.0",
+    "util": "^0.12.5"
   },
   "devDependencies": {
     "@babel/core": "^7.27.4",
+    "@types/fast-html-parser": "^1.0.4",
+    "@types/he": "^1.2.3",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.1.6",
     "@types/react-test-renderer": "^19.1.0",
