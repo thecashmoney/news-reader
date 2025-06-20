@@ -1,5 +1,4 @@
-// Voice-driven Q&A app using built-in TTS and speech-to-text API
-
+// Voice-driven Q&A app using Expo TTS and speech-to-text API
 import axios from "axios";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system";
@@ -33,17 +32,18 @@ export default function App() {
   const [stepIndex, setStepIndex] = useState(0);
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
-  const [jsonResponse, setJsonResponse] = useState(null);
+  const [fetchedArticle, setFetchedArticle] = useState<any | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isProcessingRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
 
   const steps = [
-    { key: "topic", question: "What would you like to read about today" },
+    { key: "topic", question: "What would you like to read about today?" },
     {
       key: "outlet",
-      question: "What specific outlet would you like to choose",
+      question: "What specific outlet would you like to choose?",
     },
   ];
 
@@ -63,58 +63,18 @@ export default function App() {
     })();
   }, []);
 
-  // useEffect(() => {
-  //   if (stepIndex < steps.length) {
-  //     runCurrentStep();
-  //   } else {
-  //     Speech.speak("Fetching articles for you now");
-  //     if (answers.topic && answers.outlet)
-  //       fetchArticles(answers.topic, answers.outlet);
-  //     else if (answers.topic) fetchArticles(answers.topic, null);
-  //     else if (answers.outlet) fetchArticles(answers.outlet, null);
-  //     else await fetchArticles(null, null);
-
-  //     console.log(jsonResponse);
-  //     processArticle(jsonResponse[0]);
-  //     Speech.speak(content);
-  //   }
-  // }, [stepIndex]);
-
   useEffect(() => {
     const executeFetch = async () => {
-      Speech.speak("Fetching articles for you now");
-      if (answers.topic && answers.outlet)
-        await fetchArticles(answers.topic, answers.outlet);
-      else if (answers.topic) await fetchArticles(answers.topic, null);
-      else if (answers.outlet) await fetchArticles(answers.outlet, null);
-      else await fetchArticles(null, null);
-      console.log(jsonResponse[0]);
-      await processArticle(jsonResponse[0]);
-      Speech.speak(content);
+      const article = await fetchArticles(
+        answers.topic?.trim() || "",
+        answers.outlet?.trim() || ""
+      );
+      if (article) {
+        await processArticle(article[0]);
+      } else {
+        Speech.speak("No articles were found for the given topic and source");
+      }
     };
-
-    useEffect(() => {
-  const executeFetch = async () => {
-    Speech.speak('Fetching articles for you now');
-    await fetchArticles(
-      answers.topic?.trim() || '',
-      answers.outlet?.trim() || ''
-    );
-    if (jsonResponse) {
-      await processArticle(jsonResponse[0]);
-      Speech.speak(content);
-    } else {
-      Speech.speak('No articles were found for the given topic and source');
-    }
-  };
-
-  if (stepIndex >= steps.length) {
-    executeFetch();
-  } else {
-    runCurrentStep();
-  }
-}, [stepIndex]);
-
 
     if (stepIndex >= steps.length) {
       executeFetch();
@@ -124,16 +84,30 @@ export default function App() {
   }, [stepIndex]);
 
   const runCurrentStep = () => {
+    if (stepIndex >= steps.length) return;
+
     const current = steps[stepIndex];
     isSpeakingRef.current = true;
+    setIsSpeaking(true);
+
     Speech.speak(current.question, {
       onDone: () => {
         isSpeakingRef.current = false;
-        setTimeout(() => safeStartRecording(current.key), 500);
+        setIsSpeaking(false);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(
+          () => safeStartRecording(current.key),
+          500
+        );
       },
       onError: () => {
         isSpeakingRef.current = false;
-        setTimeout(() => safeStartRecording(current.key), 500);
+        setIsSpeaking(false);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(
+          () => safeStartRecording(current.key),
+          500
+        );
       },
     });
   };
@@ -143,9 +117,7 @@ export default function App() {
     if (recordingRef.current) {
       try {
         await recordingRef.current.stopAndUnloadAsync();
-      } catch (err) {
-        console.log("Safe stop failed (may have already been stopped)", err);
-      }
+      } catch {}
       recordingRef.current = null;
       setRecording(null);
     }
@@ -154,6 +126,8 @@ export default function App() {
 
   const startRecording = async (stepKey: keyof typeof answers) => {
     try {
+      if (recordingRef.current) return;
+
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
@@ -180,7 +154,10 @@ export default function App() {
 
     try {
       const currentRecording = recordingRef.current;
-      if (!currentRecording) return;
+      if (!currentRecording) {
+        isProcessingRef.current = false;
+        return;
+      }
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
@@ -238,22 +215,26 @@ export default function App() {
         const pollingData = await pollingRes.json();
 
         if (pollingData.status === "completed") {
-          const response = pollingData.text;
+          const response = pollingData.text.replace(/[.。！？!?]+$/, "");
           setTranscribedText(
             (prev: string) => `${prev}\n${currentStep}: ${response}`
           );
           setAnswers((prev) => ({ ...prev, [currentStep]: response }));
 
           isSpeakingRef.current = true;
+          setIsSpeaking(true);
           Speech.speak("You said: " + response, {
             onDone: () => {
               isSpeakingRef.current = false;
+              setIsSpeaking(false);
               isProcessingRef.current = false;
               setStepIndex((prev) => prev + 1);
             },
             onError: () => {
               isSpeakingRef.current = false;
+              setIsSpeaking(false);
               isProcessingRef.current = false;
+              setStepIndex((prev) => prev + 1);
             },
           });
           completed = true;
@@ -269,96 +250,251 @@ export default function App() {
     }
   };
 
-  // const fetchArticles = async (q, s) => {
-  //   const url = `https://getnews-px5bnsfj3q-uc.a.run.app${s || q ? "?" : ""}${
-  //     s ? `source=${s.toLowerCase().replace(/\s+/g, "-")}` : ""
-  //   }${s && q ? "&" : ""}${q ? `q=${q}` : ""}`;
-  //   try {
-  //     setLoading(true);
-  //     const response = await axios.get(url);
-  //     setJsonResponse(response.data.articles);
-  //   } catch (err) {
-  //     console.error("Fetch error:", err);
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
-
-  const fetchArticles = async (q, s) => {
-  const url = `https://getnews-px5bnsfj3q-uc.a.run.app${s || q ? '?' : ''}${s ? `source=${s.toLowerCase().replace(/\s+/g, '-')}` : ''}${s && q ? '&' : ''}${q ? `q=${q}` : ''}`;
-  try {
-    setLoading(true);
-    const response = await axios.get(url);
-    const articles = response.data.articles;
-    return articles?.length > 0 ? articles[0] : null;
-  } catch (err) {
-    console.error('Fetch error:', err);
-    return null;
-  } finally {
-    setLoading(false);
-  }
-};
-
-
-  const processArticle = async (article: any) => {
+  const fetchArticles = async (q: string, s: string) => {
+    const url = `https://getnews-px5bnsfj3q-uc.a.run.app${s || q ? "?" : ""}${
+      s ? `source=${s.toLowerCase().replace(/\s+/g, "-")}` : ""
+    }${s && q ? "&" : ""}${q ? `q=${q}` : ""}`;
     try {
+      console.log("🔍 Fetching articles from:", url);
+      setLoading(true);
+      const response = await axios.get(url, { timeout: 10000 });
+      const articles = response.data.articles;
+      console.log("📎 API Response:", articles?.length, "articles found");
+      return articles.length > 0 ? articles : null;
+    } catch (err) {
+      console.error("Fetch error:", err);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const processArticle = async (article) => {
+    try {
+      console.log("🔗 Processing article:", article);
+      console.log("🔗 Article URL:", article.url);
+      console.log("🔗 Article title:", article.title);
+      console.log("🔗 Article description:", article.description);
+
+      // First, try to use the article content/description from the API if available
       const res = await axios.get(article.url);
       const parsed = HTMLParser.parse(res.data);
-      const decode = (str: string) => he.decode(str);
-      const extractText = (node: any): string[] => {
+      const decode = (str) => he.decode(str);
+
+      // Recursively extract text from nodes
+      const extractText = (node) => {
         if (!node) return [];
         if (Array.isArray(node)) return node.flatMap(extractText);
-        if (node.type === "text") return [node.content?.trim()].filter(Boolean);
-        if (node.type === "tag" && node.children)
-          return node.children.flatMap(extractText);
+
+        // Text node
+        if (node.nodeType === 3) return [node.rawText?.trim()].filter(Boolean);
+
+        // Tag node with children
+        if (node.nodeType === 1 && node.childNodes?.length)
+          return node.childNodes.flatMap(extractText);
+
         return [];
       };
-      const findBody = (nodes: any[]): any => {
-        for (const n of nodes) {
-          if (n.type === "tag" && n.name === "body") return n;
-          if (n.children?.length) {
-            const found = findBody(n.children);
+
+      // Recursively find the <body> tag
+      const findBody = (nodes) => {
+        if (!Array.isArray(nodes)) return null;
+        for (const node of nodes) {
+          if (node.tagName?.toLowerCase() === "body") return node;
+          if (node.childNodes?.length) {
+            const found = findBody(node.childNodes);
             if (found) return found;
           }
         }
         return null;
       };
+
       const body = findBody(parsed.childNodes);
-      const fullText = decode(extractText(body).join("\n"));
-      console.log("📰 Article Content:\n", fullText);
-      setContent(fullText);
-      setTimeout(() => Speech.speak(fullText), 1000);
+      const articleContent = body ? decode(extractText(body).join("\n")) : "";
+
+      console.log("📰 Final content length:", articleContent.length);
+      console.log(
+        "📰 Final content preview:",
+        articleContent.slice(0, 300) + "..."
+      );
+
+      if (!articleContent || articleContent.trim().length <= 0) {
+        throw new Error("Could not extract meaningful content from article");
+      }
+
+      setContent(articleContent);
+
+      // Split into words and read every 5 words
+      const words = articleContent
+        .split(/\s+/)
+        .filter((word) => word.trim().length > 0);
+
+      console.log(`📖 Starting to read ${words.length} words in groups of 5`);
+
+      isSpeakingRef.current = true;
+      setIsSpeaking(true);
+
+      // Read in groups of 5 words
+      for (let i = 0; i < words.length; i += 5) {
+        // Check if we should stop (user pressed stop button)
+        if (!isSpeakingRef.current) {
+          console.log("📖 Reading stopped by user");
+          break;
+        }
+
+        // Get next 5 words (or remaining words if less than 5)
+        const wordGroup = words.slice(i, i + 5);
+        const phrase = wordGroup.join(" ");
+
+        // Clean punctuation for better speech
+        const cleanPhrase = phrase.replace(/["""'']/g, "").trim();
+
+        console.log(
+          `📖 Reading group ${Math.floor(i / 5) + 1}: "${cleanPhrase}"`
+        );
+
+        await new Promise<void>((resolve) => {
+          Speech.speak(cleanPhrase, {
+            rate: 0.85,
+            pitch: 1.0,
+            onDone: () => {
+              console.log(`✅ Finished speaking: "${cleanPhrase}"`);
+              resolve();
+            },
+            onError: (error) => {
+              console.error("❌ Speech error for phrase:", cleanPhrase, error);
+              resolve();
+            },
+          });
+        });
+
+        // Add pause between word groups
+        if (isSpeakingRef.current) {
+          // Longer pause if the last word in group ends with sentence punctuation
+          const lastWord = wordGroup[wordGroup.length - 1];
+          if (lastWord && lastWord.match(/[.!?]$/)) {
+            await new Promise((resolve) => setTimeout(resolve, 800));
+          } else if (lastWord && lastWord.match(/[,;:]$/)) {
+            await new Promise((resolve) => setTimeout(resolve, 400));
+          } else {
+            await new Promise((resolve) => setTimeout(resolve, 300));
+          }
+        }
+
+        // Progress update every 10 groups (50 words)
+        if ((i + 5) % 50 === 0) {
+          const progress = Math.min(
+            Math.round(((i + 5) / words.length) * 100),
+            100
+          );
+          console.log(
+            `📖 Progress: ${i + 5}/${words.length} words (${progress}%)`
+          );
+        }
+      }
+
+      isSpeakingRef.current = false;
+      setIsSpeaking(false);
+
+      // Announce completion if not stopped by user
+      if (isSpeakingRef.current !== false) {
+        Speech.speak("Article reading completed.", {
+          onDone: () => {
+            console.log("📖 Article reading finished successfully");
+          },
+        });
+      }
     } catch (err) {
-      console.error("Article parsing failed:", err);
-      Speech.speak("There was an error processing the article");
+      console.error("❌ Article processing failed:", err);
+      isSpeakingRef.current = true;
+      setIsSpeaking(true);
+
+      const errorMessage = err.message?.includes("extract meaningful content")
+        ? "Could not extract readable content from this article. Please try a different article."
+        : "There was an error processing the article. Please try again.";
+
+      Speech.speak(errorMessage, {
+        onDone: () => {
+          isSpeakingRef.current = false;
+          setIsSpeaking(false);
+        },
+        onError: () => {
+          isSpeakingRef.current = false;
+          setIsSpeaking(false);
+        },
+      });
     }
+  };
+
+  const stopSpeaking = () => {
+    console.log("🛑 Stop button pressed");
+    Speech.stop();
+    isSpeakingRef.current = false;
+    setIsSpeaking(false);
   };
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={[styles.container, themeContainerStyle]}>
         <Text style={[themeTextStyle, styles.titleText]}>News Reader</Text>
-        <Text style={styles.text}>Step: {steps[stepIndex]?.key ?? "done"}</Text>
-        <Text style={styles.text}>Transcribed Text: {transcribedText}</Text>
-        <Text style={styles.text}>Topic: {answers.topic || "N/A"}</Text>
-        <Text style={styles.text}>Outlet: {answers.outlet || "N/A"}</Text>
-        {loading && <ActivityIndicator size="large" color="blue" />}
-        {isRecording && <ActivityIndicator size="large" color="tomato" />}
-        <Text style={styles.text}>{content}</Text>
-        <Button
-          title={isRecording ? "Stop Recording" : "Start Recording"}
-          onPress={
-            isRecording
-              ? () =>
-                  stopAndTranscribe(
-                    steps[stepIndex]?.key as keyof typeof answers
-                  )
-              : () =>
-                  safeStartRecording(
-                    steps[stepIndex]?.key as keyof typeof answers
-                  )
-          }
-        />
+        <Text style={[styles.text, themeTextStyle]}>
+          Step:{" "}
+          {stepIndex < steps.length ? steps[stepIndex]?.key : "Reading Article"}
+        </Text>
+        <Text style={[styles.text, themeTextStyle]}>
+          Topic: {answers.topic || "N/A"}
+        </Text>
+        <Text style={[styles.text, themeTextStyle]}>
+          Outlet: {answers.outlet || "N/A"}
+        </Text>
+
+        {loading && (
+          <>
+            <ActivityIndicator size="large" color="blue" />
+            <Text style={[styles.text, themeTextStyle]}>
+              Loading article...
+            </Text>
+          </>
+        )}
+
+        {isRecording && (
+          <>
+            <ActivityIndicator size="large" color="tomato" />
+            <Text style={[styles.text, themeTextStyle]}>Recording...</Text>
+          </>
+        )}
+
+        {isSpeaking && (
+          <>
+            <ActivityIndicator size="large" color="green" />
+            <Text style={[styles.text, themeTextStyle]}>Speaking...</Text>
+            <Button title="Stop Reading" onPress={stopSpeaking} color="red" />
+          </>
+        )}
+
+        {stepIndex < steps.length && (
+          <Button
+            title={isRecording ? "Stop Recording" : "Start Recording"}
+            onPress={
+              isRecording
+                ? () =>
+                    stopAndTranscribe(
+                      steps[stepIndex]?.key as keyof typeof answers
+                    )
+                : () =>
+                    safeStartRecording(
+                      steps[stepIndex]?.key as keyof typeof answers
+                    )
+            }
+            disabled={isSpeaking || loading}
+          />
+        )}
+
+        {content && (
+          <Text style={[styles.contentText, themeTextStyle]} numberOfLines={15}>
+            {content}
+          </Text>
+        )}
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -368,7 +504,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
+    padding: 20,
   },
   lightContainer: {
     backgroundColor: "#D0D0D0",
@@ -378,20 +515,28 @@ const styles = StyleSheet.create({
   },
   lightThemeText: {
     color: "#353636",
-    justifyContent: "center",
-    backgroundColor: "#ecf0f1",
-    padding: 16,
   },
   darkThemeText: {
     color: "#D0D0D0",
   },
   text: {
-    fontSize: 18,
-    marginBottom: 16,
+    fontSize: 16,
+    marginBottom: 12,
+    textAlign: "center",
   },
   titleText: {
     paddingTop: 20,
+    paddingBottom: 20,
     fontWeight: "bold",
-    fontSize: 40,
+    fontSize: 32,
+    textAlign: "center",
+  },
+  contentText: {
+    fontSize: 14,
+    marginTop: 20,
+    padding: 10,
+    backgroundColor: "rgba(0,0,0,0.1)",
+    borderRadius: 8,
+    maxHeight: 300,
   },
 });
