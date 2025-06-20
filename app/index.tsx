@@ -65,15 +65,49 @@ export default function App() {
 
   useEffect(() => {
     const executeFetch = async () => {
-      const article = await fetchArticles(
+      const articles = await fetchArticles(
         answers.topic?.trim() || "",
         answers.outlet?.trim() || ""
       );
-      if (article) {
-        await processArticle(article[0]);
-      } else {
+
+      if (!articles || articles.length === 0) {
         Speech.speak("No articles were found for the given topic and source");
+        return;
       }
+
+      // Speak out the list of articles with numbers
+      const limitedArticles = articles.slice(0, 5); // 🔹 Only first 5
+      const titles = limitedArticles.map(
+        (article, index) => `Article ${index + 1}: ${article.title}`
+      );
+      const titlesText = titles.join(". ");
+
+      isSpeakingRef.current = true;
+      setIsSpeaking(true);
+
+      Speech.speak(titlesText, {
+        onDone: () => {
+          isSpeakingRef.current = false;
+          setIsSpeaking(false);
+
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          // Start recording for article number selection
+          timeoutRef.current = setTimeout(
+            () => safeStartRecording("articleSelection", limitedArticles),
+            500
+          );
+        },
+        onError: () => {
+          isSpeakingRef.current = false;
+          setIsSpeaking(false);
+
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          timeoutRef.current = setTimeout(
+            () => safeStartRecording("articleSelection", limitedArticles),
+            500
+          );
+        },
+      });
     };
 
     if (stepIndex >= steps.length) {
@@ -82,6 +116,42 @@ export default function App() {
       runCurrentStep();
     }
   }, [stepIndex]);
+
+  const handleArticleSelection = (spokenText: string, articles: any[]) => {
+    const numberWords: { [key: string]: number } = {
+      one: 1,
+      two: 2,
+      three: 3,
+      four: 4,
+      five: 5,
+      six: 6,
+      seven: 7,
+      eight: 8,
+      nine: 9,
+      ten: 10,
+    };
+
+    const normalized = spokenText.toLowerCase().trim();
+    let selectedIndex = -1;
+
+    if (!isNaN(Number(normalized))) {
+      selectedIndex = Number(normalized) - 1;
+    } else if (numberWords[normalized]) {
+      selectedIndex = numberWords[normalized] - 1;
+    }
+
+    if (selectedIndex >= 0 && selectedIndex < articles.length) {
+      processArticle(articles[selectedIndex]);
+    } else {
+      Speech.speak(
+        "I did not understand the article number. Please try again."
+      );
+      timeoutRef.current = setTimeout(
+        () => safeStartRecording("articleSelection", articles),
+        1000
+      );
+    }
+  };
 
   const runCurrentStep = () => {
     if (stepIndex >= steps.length) return;
@@ -112,7 +182,10 @@ export default function App() {
     });
   };
 
-  const safeStartRecording = async (stepKey: keyof typeof answers) => {
+  const safeStartRecording = async (
+    stepKey: keyof typeof answers | "articleSelection",
+    articles: any[] = []
+  ) => {
     if (isRecording || isProcessingRef.current || isSpeakingRef.current) return;
     if (recordingRef.current) {
       try {
@@ -121,6 +194,18 @@ export default function App() {
       recordingRef.current = null;
       setRecording(null);
     }
+
+    // 🔹 ADDED: handle article selection flow
+    if (stepKey === "articleSelection") {
+      await startRecording("articleSelection" as any);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      await stopAndTranscribe("articleSelection" as any);
+      const lastLine = transcribedText.trim().split("\n").pop() || "";
+      const spoken = lastLine.split(":").slice(1).join(":").trim();
+      handleArticleSelection(spoken, articles);
+      return;
+    }
+
     await startRecording(stepKey);
   };
 
