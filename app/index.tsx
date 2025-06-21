@@ -38,6 +38,9 @@ export default function App() {
   const isProcessingRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const [allArticles, setAllArticles] = useState<any[]>([]);
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const [isInArticleSelection, setIsInArticleSelection] = useState(false);
 
   const steps = [
     { key: "topic", question: "What would you like to read about today?" },
@@ -75,81 +78,125 @@ export default function App() {
         return;
       }
 
-      // Speak out the list of articles with numbers
-      const limitedArticles = articles.slice(0, 5); // 🔹 Only first 5
-      const titles = limitedArticles.map(
-        (article, index) => `Article ${index + 1}: ${article.title}`
-      );
-      const titlesText = titles.join(". ");
-
-      isSpeakingRef.current = true;
-      setIsSpeaking(true);
-
-      Speech.speak(titlesText, {
-        onDone: () => {
-          isSpeakingRef.current = false;
-          setIsSpeaking(false);
-
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
-          // Start recording for article number selection
-          timeoutRef.current = setTimeout(
-            () => safeStartRecording("articleSelection", limitedArticles),
-            500
-          );
-        },
-        onError: () => {
-          isSpeakingRef.current = false;
-          setIsSpeaking(false);
-
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
-          timeoutRef.current = setTimeout(
-            () => safeStartRecording("articleSelection", limitedArticles),
-            500
-          );
-        },
-      });
+      setAllArticles(articles);
+      setCurrentPageIndex(0);
+      setIsInArticleSelection(true);
+      speakArticlesPage(articles, 0);
     };
 
-    if (stepIndex >= steps.length) {
+    if (stepIndex >= steps.length && !isInArticleSelection) {
       executeFetch();
-    } else {
+    } else if (stepIndex < steps.length) {
       runCurrentStep();
     }
   }, [stepIndex]);
 
-  const handleArticleSelection = (spokenText: string, articles: any[]) => {
+  const speakArticlesPage = (articles: any[], pageIndex: number) => {
+    const start = pageIndex * 5;
+    const currentPage = articles.slice(start, start + 5);
+    
+    console.log(`📋 Speaking page ${pageIndex + 1}, articles ${start + 1}-${start + currentPage.length}`);
+    console.log('📋 Current page articles:', currentPage.map(a => a.title));
+    
+    if (currentPage.length === 0) {
+      Speech.speak("No more articles available.");
+      return;
+    }
+
+    const titles = currentPage.map(
+      (article, i) => `Article ${i + 1}: ${article.title}`
+    );
+    
+    const hasMorePages = start + 5 < articles.length;
+    const prompt = hasMorePages 
+      ? "Say a number from 1 to 5 to choose an article, or say 'more' to hear the next 5 articles."
+      : "Say a number from 1 to 5 to choose an article.";
+    
+    const text = titles.join(". ") + ". " + prompt;
+
+    isSpeakingRef.current = true;
+    setIsSpeaking(true);
+
+    Speech.speak(text, {
+      onDone: () => {
+        isSpeakingRef.current = false;
+        setIsSpeaking(false);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(
+          () => safeStartRecording("articleSelection", currentPage),
+          500
+        );
+      },
+      onError: () => {
+        isSpeakingRef.current = false;
+        setIsSpeaking(false);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(
+          () => safeStartRecording("articleSelection", currentPage),
+          500
+        );
+      },
+    });
+  };
+
+  const handleArticleSelection = (spokenText: string, currentPage: any[]) => {
     const numberWords: { [key: string]: number } = {
       one: 1,
       two: 2,
       three: 3,
       four: 4,
       five: 5,
-      six: 6,
-      seven: 7,
-      eight: 8,
-      nine: 9,
-      ten: 10,
     };
 
     const normalized = spokenText.toLowerCase().trim();
-    let selectedIndex = -1;
 
+    if (normalized === "more") {
+      const nextPageIndex = currentPageIndex + 1;
+      const start = nextPageIndex * 5;
+      
+      console.log(`🔄 User said "more". Current page: ${currentPageIndex}, Next page: ${nextPageIndex}`);
+      console.log(`🔄 Total articles: ${allArticles.length}, Start index: ${start}`);
+      
+      if (start < allArticles.length) {
+        console.log(`✅ Moving to next page ${nextPageIndex}`);
+        setCurrentPageIndex(nextPageIndex);
+        speakArticlesPage(allArticles, nextPageIndex);
+      } else {
+        console.log(`❌ No more articles available`);
+        Speech.speak("No more articles available. Please choose from the current list.");
+        // Go back to current page
+        timeoutRef.current = setTimeout(
+          () => safeStartRecording("articleSelection", currentPage),
+          1000
+        );
+      }
+      return;
+    }
+
+    let selectedIndex = -1;
     if (!isNaN(Number(normalized))) {
       selectedIndex = Number(normalized) - 1;
     } else if (numberWords[normalized]) {
       selectedIndex = numberWords[normalized] - 1;
     }
 
-    if (selectedIndex >= 0 && selectedIndex < articles.length) {
-      processArticle(articles[selectedIndex]);
+    if (selectedIndex >= 0 && selectedIndex < currentPage.length) {
+      setIsInArticleSelection(false);
+      processArticle(currentPage[selectedIndex]);
     } else {
-      Speech.speak(
-        "I did not understand the article number. Please try again."
-      );
-      timeoutRef.current = setTimeout(
-        () => safeStartRecording("articleSelection", articles),
-        1000
-      );
+      const hasMorePages = (currentPageIndex + 1) * 5 < allArticles.length;
+      const errorMessage = hasMorePages 
+        ? "I did not understand. Say a number from 1 to 5 to choose an article, or say 'more' for the next page."
+        : "I did not understand. Say a number from 1 to 5 to choose an article.";
+      
+      Speech.speak(errorMessage, {
+        onDone: () => {
+          timeoutRef.current = setTimeout(
+            () => safeStartRecording("articleSelection", currentPage),
+            500
+          );
+        }
+      });
     }
   };
 
@@ -195,14 +242,10 @@ export default function App() {
       setRecording(null);
     }
 
-    // 🔹 ADDED: handle article selection flow
     if (stepKey === "articleSelection") {
       await startRecording("articleSelection" as any);
       await new Promise((resolve) => setTimeout(resolve, 5000));
-      await stopAndTranscribe("articleSelection" as any);
-      const lastLine = transcribedText.trim().split("\n").pop() || "";
-      const spoken = lastLine.split(":").slice(1).join(":").trim();
-      handleArticleSelection(spoken, articles);
+      await stopAndTranscribeForArticleSelection(articles);
       return;
     }
 
@@ -227,9 +270,96 @@ export default function App() {
       setRecording(newRecording);
       setIsRecording(true);
 
-      timeoutRef.current = setTimeout(() => stopAndTranscribe(stepKey), 5000);
+      if (stepKey !== "articleSelection") {
+        timeoutRef.current = setTimeout(() => stopAndTranscribe(stepKey), 5000);
+      }
     } catch (err) {
       console.error("Failed to start recording", err);
+    }
+  };
+
+  const stopAndTranscribeForArticleSelection = async (currentPageArticles: any[]) => {
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+
+    try {
+      const currentRecording = recordingRef.current;
+      if (!currentRecording) {
+        isProcessingRef.current = false;
+        return;
+      }
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+
+      await currentRecording.stopAndUnloadAsync();
+      const uri = currentRecording.getURI();
+      recordingRef.current = null;
+      setRecording(null);
+      setIsRecording(false);
+
+      if (!uri) {
+        console.error("Recording URI is null");
+        isProcessingRef.current = false;
+        return;
+      }
+
+      const uploadRes = await FileSystem.uploadAsync(
+        "https://api.assemblyai.com/v2/upload",
+        uri,
+        {
+          httpMethod: "POST",
+          headers: { authorization: "e8dd923d1a4143d29f0bc0a7a2c119dd" },
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        }
+      );
+
+      const uploadData = JSON.parse(uploadRes.body);
+      const audioUrl = uploadData.upload_url;
+
+      const transcriptRes = await fetch(
+        "https://api.assemblyai.com/v2/transcript",
+        {
+          method: "POST",
+          headers: {
+            authorization: "e8dd923d1a4143d29f0bc0a7a2c119dd",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ audio_url: audioUrl }),
+        }
+      );
+
+      const transcriptData = await transcriptRes.json();
+      const transcriptId = transcriptData.id;
+
+      let completed = false;
+      while (!completed) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const pollingRes = await fetch(
+          `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
+          {
+            headers: { authorization: "e8dd923d1a4143d29f0bc0a7a2c119dd" },
+          }
+        );
+        const pollingData = await pollingRes.json();
+
+        if (pollingData.status === "completed") {
+          const response = pollingData.text.replace(/[.。！？!?]+$/, "");
+          console.log("Article selection response:", response);
+          
+          isProcessingRef.current = false;
+          handleArticleSelection(response, currentPageArticles);
+          completed = true;
+        } else if (pollingData.status === "error") {
+          console.error("Transcription error:", pollingData.error);
+          completed = true;
+          isProcessingRef.current = false;
+        }
+      }
+    } catch (error) {
+      console.error("Transcription failed:", error);
+      isProcessingRef.current = false;
     }
   };
 
@@ -518,13 +648,22 @@ export default function App() {
     setIsSpeaking(false);
   };
 
+  const getCurrentStepDisplay = () => {
+    if (stepIndex < steps.length) {
+      return steps[stepIndex]?.key;
+    } else if (isInArticleSelection) {
+      return "Selecting Article";
+    } else {
+      return "Reading Article";
+    }
+  };
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={[styles.container, themeContainerStyle]}>
         <Text style={[themeTextStyle, styles.titleText]}>News Reader</Text>
         <Text style={[styles.text, themeTextStyle]}>
-          Step:{" "}
-          {stepIndex < steps.length ? steps[stepIndex]?.key : "Reading Article"}
+          Step: {getCurrentStepDisplay()}
         </Text>
         <Text style={[styles.text, themeTextStyle]}>
           Topic: {answers.topic || "N/A"}
@@ -533,11 +672,17 @@ export default function App() {
           Outlet: {answers.outlet || "N/A"}
         </Text>
 
+        {isInArticleSelection && (
+          <Text style={[styles.text, themeTextStyle]}>
+            Articles found: {allArticles.length} | Page: {currentPageIndex + 1} of {Math.ceil(allArticles.length / 5)}
+          </Text>
+        )}
+
         {loading && (
           <>
             <ActivityIndicator size="large" color="blue" />
             <Text style={[styles.text, themeTextStyle]}>
-              Loading article...
+              Loading articles...
             </Text>
           </>
         )}
@@ -557,7 +702,7 @@ export default function App() {
           </>
         )}
 
-        {stepIndex < steps.length && (
+        {stepIndex < steps.length && !isInArticleSelection && (
           <Button
             title={isRecording ? "Stop Recording" : "Start Recording"}
             onPress={
