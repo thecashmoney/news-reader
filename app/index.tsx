@@ -38,18 +38,23 @@ export default function App() {
   const isProcessingRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const allArticlesRef = useRef<any[]>([]);
   const [allArticles, setAllArticles] = useState<any[]>([]);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [isInArticleSelection, setIsInArticleSelection] = useState(false);
 
   const steps = [
-    { key: "topic", question: "What would you like to read about today?" },
+    {
+      key: "topic",
+      question:
+        "What would you like to read about today? You can say 'skip' to skip this.",
+    },
     {
       key: "outlet",
-      question: "What specific outlet would you like to choose?",
+      question:
+        "What specific outlet would you like to choose? You can say 'skip' to skip this.",
     },
   ];
-
   const themeTextStyle =
     colorScheme === "light" ? styles.lightThemeText : styles.darkThemeText;
   const themeContainerStyle =
@@ -68,17 +73,24 @@ export default function App() {
 
   useEffect(() => {
     const executeFetch = async () => {
-      const articles = await fetchArticles(
-        answers.topic?.trim() || "",
-        answers.outlet?.trim() || ""
+      // Convert empty strings to null for the API call
+      const topicParam = answers.topic?.trim() || "";
+      const outletParam = answers.outlet?.trim() || "";
+
+      console.log(
+        `Fetching articles with topic: ${topicParam}, outlet: ${outletParam}`
       );
+
+      const articles = await fetchArticles(topicParam, outletParam);
 
       if (!articles || articles.length === 0) {
         Speech.speak("No articles were found for the given topic and source");
         return;
       }
 
+      // Store in both state (for UI display) and ref (for immediate access)
       setAllArticles(articles);
+      allArticlesRef.current = articles;
       setCurrentPageIndex(0);
       setIsInArticleSelection(true);
       speakArticlesPage(articles, 0);
@@ -94,10 +106,17 @@ export default function App() {
   const speakArticlesPage = (articles: any[], pageIndex: number) => {
     const start = pageIndex * 5;
     const currentPage = articles.slice(start, start + 5);
-    
-    console.log(`📋 Speaking page ${pageIndex + 1}, articles ${start + 1}-${start + currentPage.length}`);
-    console.log('📋 Current page articles:', currentPage.map(a => a.title));
-    
+
+    console.log(
+      `📋 Speaking page ${pageIndex + 1}, articles ${start + 1}-${
+        start + currentPage.length
+      }`
+    );
+    console.log(
+      "📋 Current page articles:",
+      currentPage.map((a) => a.title)
+    );
+
     if (currentPage.length === 0) {
       Speech.speak("No more articles available.");
       return;
@@ -106,12 +125,12 @@ export default function App() {
     const titles = currentPage.map(
       (article, i) => `Article ${i + 1}: ${article.title}`
     );
-    
+
     const hasMorePages = start + 5 < articles.length;
-    const prompt = hasMorePages 
+    const prompt = hasMorePages
       ? "Say a number from 1 to 5 to choose an article, or say 'more' to hear the next 5 articles."
       : "Say a number from 1 to 5 to choose an article.";
-    
+
     const text = titles.join(". ") + ". " + prompt;
 
     isSpeakingRef.current = true;
@@ -153,17 +172,24 @@ export default function App() {
     if (normalized === "more") {
       const nextPageIndex = currentPageIndex + 1;
       const start = nextPageIndex * 5;
-      
-      console.log(`🔄 User said "more". Current page: ${currentPageIndex}, Next page: ${nextPageIndex}`);
-      console.log(`🔄 Total articles: ${allArticles.length}, Start index: ${start}`);
-      
-      if (start < allArticles.length) {
+
+      console.log(
+        `🔄 User said "more". Current page: ${currentPageIndex}, Next page: ${nextPageIndex}`
+      );
+      console.log(
+        `🔄 Total articles: ${allArticlesRef.current.length}, Start index: ${start}`
+      ); // Use ref here!
+
+      if (start < allArticlesRef.current.length) {
+        // Use ref here!
         console.log(`✅ Moving to next page ${nextPageIndex}`);
         setCurrentPageIndex(nextPageIndex);
-        speakArticlesPage(allArticles, nextPageIndex);
+        speakArticlesPage(allArticlesRef.current, nextPageIndex); // Use ref here!
       } else {
         console.log(`❌ No more articles available`);
-        Speech.speak("No more articles available. Please choose from the current list.");
+        Speech.speak(
+          "No more articles available. Please choose from the current list."
+        );
         // Go back to current page
         timeoutRef.current = setTimeout(
           () => safeStartRecording("articleSelection", currentPage),
@@ -184,18 +210,19 @@ export default function App() {
       setIsInArticleSelection(false);
       processArticle(currentPage[selectedIndex]);
     } else {
-      const hasMorePages = (currentPageIndex + 1) * 5 < allArticles.length;
-      const errorMessage = hasMorePages 
+      const hasMorePages =
+        (currentPageIndex + 1) * 5 < allArticlesRef.current.length; // Use ref here!
+      const errorMessage = hasMorePages
         ? "I did not understand. Say a number from 1 to 5 to choose an article, or say 'more' for the next page."
         : "I did not understand. Say a number from 1 to 5 to choose an article.";
-      
+
       Speech.speak(errorMessage, {
         onDone: () => {
           timeoutRef.current = setTimeout(
             () => safeStartRecording("articleSelection", currentPage),
             500
           );
-        }
+        },
       });
     }
   };
@@ -278,7 +305,9 @@ export default function App() {
     }
   };
 
-  const stopAndTranscribeForArticleSelection = async (currentPageArticles: any[]) => {
+  const stopAndTranscribeForArticleSelection = async (
+    currentPageArticles: any[]
+  ) => {
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;
 
@@ -347,7 +376,7 @@ export default function App() {
         if (pollingData.status === "completed") {
           const response = pollingData.text.replace(/[.。！？!?]+$/, "");
           console.log("Article selection response:", response);
-          
+
           isProcessingRef.current = false;
           handleArticleSelection(response, currentPageArticles);
           completed = true;
@@ -431,27 +460,67 @@ export default function App() {
 
         if (pollingData.status === "completed") {
           const response = pollingData.text.replace(/[.。！？!?]+$/, "");
-          setTranscribedText(
-            (prev: string) => `${prev}\n${currentStep}: ${response}`
-          );
-          setAnswers((prev) => ({ ...prev, [currentStep]: response }));
 
-          isSpeakingRef.current = true;
-          setIsSpeaking(true);
-          Speech.speak("You said: " + response, {
-            onDone: () => {
-              isSpeakingRef.current = false;
-              setIsSpeaking(false);
-              isProcessingRef.current = false;
-              setStepIndex((prev) => prev + 1);
-            },
-            onError: () => {
-              isSpeakingRef.current = false;
-              setIsSpeaking(false);
-              isProcessingRef.current = false;
-              setStepIndex((prev) => prev + 1);
-            },
-          });
+          // Check if user said "skip"
+          const normalizedResponse = response.toLowerCase().trim();
+          if (
+            normalizedResponse === "skip" ||
+            normalizedResponse.includes("skip")
+          ) {
+            console.log(`User skipped ${currentStep}`);
+
+            // Set the answer to null/empty for this step
+            setAnswers((prev) => ({ ...prev, [currentStep]: "" }));
+            setTranscribedText(
+              (prev: string) => `${prev}\n${currentStep}: [SKIPPED]`
+            );
+
+            // Acknowledge the skip and move to next step
+            isSpeakingRef.current = true;
+            setIsSpeaking(true);
+            Speech.speak(
+              `Skipping ${
+                currentStep === "topic" ? "topic selection" : "outlet selection"
+              }.`,
+              {
+                onDone: () => {
+                  isSpeakingRef.current = false;
+                  setIsSpeaking(false);
+                  isProcessingRef.current = false;
+                  setStepIndex((prev) => prev + 1);
+                },
+                onError: () => {
+                  isSpeakingRef.current = false;
+                  setIsSpeaking(false);
+                  isProcessingRef.current = false;
+                  setStepIndex((prev) => prev + 1);
+                },
+              }
+            );
+          } else {
+            // Normal processing - not a skip
+            setTranscribedText(
+              (prev: string) => `${prev}\n${currentStep}: ${response}`
+            );
+            setAnswers((prev) => ({ ...prev, [currentStep]: response }));
+
+            isSpeakingRef.current = true;
+            setIsSpeaking(true);
+            Speech.speak("You said: " + response, {
+              onDone: () => {
+                isSpeakingRef.current = false;
+                setIsSpeaking(false);
+                isProcessingRef.current = false;
+                setStepIndex((prev) => prev + 1);
+              },
+              onError: () => {
+                isSpeakingRef.current = false;
+                setIsSpeaking(false);
+                isProcessingRef.current = false;
+                setStepIndex((prev) => prev + 1);
+              },
+            });
+          }
           completed = true;
         } else if (pollingData.status === "error") {
           console.error("Transcription error:", pollingData.error);
@@ -674,7 +743,8 @@ export default function App() {
 
         {isInArticleSelection && (
           <Text style={[styles.text, themeTextStyle]}>
-            Articles found: {allArticles.length} | Page: {currentPageIndex + 1} of {Math.ceil(allArticles.length / 5)}
+            Articles found: {allArticles.length} | Page: {currentPageIndex + 1}{" "}
+            of {Math.ceil(allArticles.length / 5)}
           </Text>
         )}
 
