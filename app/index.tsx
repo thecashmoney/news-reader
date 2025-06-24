@@ -412,56 +412,19 @@ export default function App() {
       }
 
       const uploadRes = await FileSystem.uploadAsync(
-        "https://api.assemblyai.com/v2/upload",
+        "https://transcribe-px5bnsfj3q-uc.a.run.app",
         uri,
         {
           httpMethod: "POST",
-          headers: { authorization: "e8dd923d1a4143d29f0bc0a7a2c119dd" },
           uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         }
       );
 
-      const uploadData = JSON.parse(uploadRes.body);
-      const audioUrl = uploadData.upload_url;
-
-      const transcriptRes = await fetch(
-        "https://api.assemblyai.com/v2/transcript",
-        {
-          method: "POST",
-          headers: {
-            authorization: "e8dd923d1a4143d29f0bc0a7a2c119dd",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ audio_url: audioUrl }),
-        }
-      );
-
-      const transcriptData = await transcriptRes.json();
-      const transcriptId = transcriptData.id;
-
-      let completed = false;
-      while (!completed) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const pollingRes = await fetch(
-          `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
-          {
-            headers: { authorization: "e8dd923d1a4143d29f0bc0a7a2c119dd" },
-          }
-        );
-        const pollingData = await pollingRes.json();
-
-        if (pollingData.status === "completed") {
-          const response = pollingData.text.replace(/[.。！？!?]+$/, "");
-          console.log("Article selection response:", response);
-
-          isProcessingRef.current = false;
-          handleArticleSelection(response, currentPageArticles);
-          completed = true;
-        } else if (pollingData.status === "error") {
-          console.error("Transcription error:", pollingData.error);
-          completed = true;
-          isProcessingRef.current = false;
-        }
+      if (uploadRes.status == 200) {
+        const response = JSON.parse(uploadRes.body);
+        console.log("Article selection response:", response);
+        isProcessingRef.current = false;
+        handleArticleSelection(response, currentPageArticles);
       }
     } catch (error) {
       console.error("Transcription failed:", error);
@@ -497,102 +460,43 @@ export default function App() {
       }
 
       const uploadRes = await FileSystem.uploadAsync(
-        "https://api.assemblyai.com/v2/upload",
+        "https://transcribe-px5bnsfj3q-uc.a.run.app",
         uri,
         {
           httpMethod: "POST",
-          headers: { authorization: "e8dd923d1a4143d29f0bc0a7a2c119dd" },
           uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         }
       );
 
-      const uploadData = JSON.parse(uploadRes.body);
-      const audioUrl = uploadData.upload_url;
-
-      const transcriptRes = await fetch(
-        "https://api.assemblyai.com/v2/transcript",
-        {
-          method: "POST",
-          headers: {
-            authorization: "e8dd923d1a4143d29f0bc0a7a2c119dd",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ audio_url: audioUrl }),
+      if (uploadRes.status == 200) {
+        const response = JSON.parse(uploadRes.body);
+        if (currentStep === "postArticle") {
+          // Handle post-article response
+          isProcessingRef.current = false;
+          handlePostArticleResponse(response);
+          return; // Exit early for post-article handling
         }
-      );
 
-      const transcriptData = await transcriptRes.json();
-      const transcriptId = transcriptData.id;
+        const normalizedResponse = response.toLowerCase().trim();
+        if (
+          normalizedResponse === "skip" ||
+          normalizedResponse.includes("skip")
+        ) {
+          console.log(`User skipped ${currentStep}`);
 
-      let completed = false;
-      while (!completed) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const pollingRes = await fetch(
-          `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
-          {
-            headers: { authorization: "e8dd923d1a4143d29f0bc0a7a2c119dd" },
-          }
-        );
-        const pollingData = await pollingRes.json();
+          // Set the answer to null/empty for this step
+          setAnswers((prev) => ({ ...prev, [currentStep]: "" }));
+          setTranscribedText(
+            (prev: string) => `${prev}\n${currentStep}: [SKIPPED]`
+          );
 
-        if (pollingData.status === "completed") {
-          const response = pollingData.text.replace(/[.。！？!?]+$/, "");
-
-          // 🎯 ADD THE POST-ARTICLE CHECK RIGHT HERE - BEFORE THE SKIP CHECK
-          if (currentStep === "postArticle") {
-            // Handle post-article response
-            isProcessingRef.current = false;
-            handlePostArticleResponse(response);
-            completed = true;
-            return; // Exit early for post-article handling
-          }
-
-          // Check if user said "skip" (EXISTING CODE STAYS HERE)
-          const normalizedResponse = response.toLowerCase().trim();
-          if (
-            normalizedResponse === "skip" ||
-            normalizedResponse.includes("skip")
-          ) {
-            console.log(`User skipped ${currentStep}`);
-
-            // Set the answer to null/empty for this step
-            setAnswers((prev) => ({ ...prev, [currentStep]: "" }));
-            setTranscribedText(
-              (prev: string) => `${prev}\n${currentStep}: [SKIPPED]`
-            );
-
-            // Acknowledge the skip and move to next step
-            isSpeakingRef.current = true;
-            setIsSpeaking(true);
-            Speech.speak(
-              `Skipping ${currentStep === "topic" ? "topic selection" : "outlet selection"
-              }.`,
-              {
-                volume: 1.0,
-                onDone: () => {
-                  isSpeakingRef.current = false;
-                  setIsSpeaking(false);
-                  isProcessingRef.current = false;
-                  setStepIndex((prev) => prev + 1);
-                },
-                onError: () => {
-                  isSpeakingRef.current = false;
-                  setIsSpeaking(false);
-                  isProcessingRef.current = false;
-                  setStepIndex((prev) => prev + 1);
-                },
-              }
-            );
-          } else {
-            // Normal processing - not a skip (EXISTING CODE STAYS HERE)
-            setTranscribedText(
-              (prev: string) => `${prev}\n${currentStep}: ${response}`
-            );
-            setAnswers((prev) => ({ ...prev, [currentStep]: response }));
-
-            isSpeakingRef.current = true;
-            setIsSpeaking(true);
-            Speech.speak("You said: " + response, {
+          // Acknowledge the skip and move to next step
+          isSpeakingRef.current = true;
+          setIsSpeaking(true);
+          Speech.speak(
+            `Skipping ${currentStep === "topic" ? "topic selection" : "outlet selection"
+            }.`,
+            {
               volume: 1.0,
               onDone: () => {
                 isSpeakingRef.current = false;
@@ -606,13 +510,32 @@ export default function App() {
                 isProcessingRef.current = false;
                 setStepIndex((prev) => prev + 1);
               },
-            });
-          }
-          completed = true;
-        } else if (pollingData.status === "error") {
-          console.error("Transcription error:", pollingData.error);
-          completed = true;
-          isProcessingRef.current = false;
+            }
+          );
+        } else {
+          // Normal processing - not a skip (EXISTING CODE STAYS HERE)
+          setTranscribedText(
+            (prev: string) => `${prev}\n${currentStep}: ${response}`
+          );
+          setAnswers((prev) => ({ ...prev, [currentStep]: response }));
+
+          isSpeakingRef.current = true;
+          setIsSpeaking(true);
+          Speech.speak("You said: " + response, {
+            volume: 1.0,
+            onDone: () => {
+              isSpeakingRef.current = false;
+              setIsSpeaking(false);
+              isProcessingRef.current = false;
+              setStepIndex((prev) => prev + 1);
+            },
+            onError: () => {
+              isSpeakingRef.current = false;
+              setIsSpeaking(false);
+              isProcessingRef.current = false;
+              setStepIndex((prev) => prev + 1);
+            },
+          });
         }
       }
     } catch (error) {
@@ -625,7 +548,6 @@ export default function App() {
     const url = `https://getnews-px5bnsfj3q-uc.a.run.app${s || q ? "?" : ""}${s ? `source=${s.toLowerCase().replace(/\s+/g, "-")}` : ""
       }${s && q ? "&" : ""}${q ? `q=${q}` : ""}`;
     try {
-      console.log("🔍 Fetching articles from:", url);
       setLoading(true);
       const response = await axios.get(url, { timeout: 10000 });
       const articles = response.data.articles;
