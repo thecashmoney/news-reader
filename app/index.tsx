@@ -598,7 +598,7 @@ export default function App() {
           // You could add app exit logic here or just reset
           // For now, we'll reset after a longer delay
           setTimeout(() => {
-            return;
+            resetAppState();
           }, 5000);
         }
       });
