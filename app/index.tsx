@@ -153,7 +153,7 @@ export default function App() {
 
       if (!articles || articles.length === 0) {
         Speech.speak("No articles were found for the given topic and source", { volume: 1.0 });
-        return;
+        resetAppState();
       }
 
       // Store in both state (for UI display) and ref (for immediate access)
@@ -598,7 +598,7 @@ export default function App() {
           // You could add app exit logic here or just reset
           // For now, we'll reset after a longer delay
           setTimeout(() => {
-            resetAppState();
+            return;
           }, 5000);
         }
       });
@@ -953,13 +953,6 @@ export default function App() {
         <Text style={[styles.text, themeTextStyle]}>
           Outlet: {answers.outlet || "N/A"}
         </Text>
-
-        {isInArticleSelection && (
-          <Text style={[styles.text, themeTextStyle]}>
-            Articles found: {allArticles.length} | Page: {currentPageIndex + 1}{" "}
-            of {Math.ceil(allArticles.length / 5)}
-          </Text>
-        )}
 
         {loading && (
           <>
