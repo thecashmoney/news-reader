@@ -11,8 +11,10 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "This app needs access to the microphone for voice input."
-      }
+        "NSMicrophoneUsageDescription": "This app needs access to the microphone for voice input.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.anonymous.newsreader"
     },
     "android": {
       "adaptiveIcon": {
@@ -20,7 +22,9 @@
         "backgroundColor": "#ffffff"
       },
       "permissions": [
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "package": "com.anonymous.newsreader"
     },
@@ -49,6 +53,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "62e095b7-6dc1-4c77-bb78-6fabfe47f964"
+      }
+    },
+    "owner": "mehlliott"
   }
 }
