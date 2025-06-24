@@ -42,7 +42,7 @@ export default function App() {
   const [allArticles, setAllArticles] = useState<any[]>([]);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [isInArticleSelection, setIsInArticleSelection] = useState(false);
-// hi
+  // hi
   const steps = [
     {
       key: "topic",
@@ -60,6 +60,20 @@ export default function App() {
   const themeContainerStyle =
     colorScheme === "light" ? styles.lightContainer : styles.darkContainer;
 
+  const configureAudioSession = async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: false, // Prevents volume ducking on Android
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: false,
+        interruptionMode: "mixWithOthers",
+      });
+    } catch (error) {
+      console.error('Failed to configure audio session:', error);
+    }
+  };
   useEffect(() => {
     (async () => {
       const { granted } = await Audio.requestPermissionsAsync();
@@ -67,6 +81,7 @@ export default function App() {
         Alert.alert("Permission to access microphone was denied");
         return;
       }
+      await configureAudioSession();
       runCurrentStep();
     })();
   }, []);
@@ -84,7 +99,7 @@ export default function App() {
       const articles = await fetchArticles(topicParam, outletParam);
 
       if (!articles || articles.length === 0) {
-        Speech.speak("No articles were found for the given topic and source");
+        Speech.speak("No articles were found for the given topic and source", { volume: 1.0 });
         return;
       }
 
@@ -108,8 +123,7 @@ export default function App() {
     const currentPage = articles.slice(start, start + 5);
 
     console.log(
-      `📋 Speaking page ${pageIndex + 1}, articles ${start + 1}-${
-        start + currentPage.length
+      `📋 Speaking page ${pageIndex + 1}, articles ${start + 1}-${start + currentPage.length
       }`
     );
     console.log(
@@ -118,7 +132,7 @@ export default function App() {
     );
 
     if (currentPage.length === 0) {
-      Speech.speak("No more articles available.");
+      Speech.speak("No more articles available.", { volume: 1.0 });
       return;
     }
 
@@ -137,6 +151,7 @@ export default function App() {
     setIsSpeaking(true);
 
     Speech.speak(text, {
+      volume: 1.0,
       onDone: () => {
         isSpeakingRef.current = false;
         setIsSpeaking(false);
@@ -188,7 +203,7 @@ export default function App() {
       } else {
         console.log(`❌ No more articles available`);
         Speech.speak(
-          "No more articles available. Please choose from the current list."
+          "No more articles available. Please choose from the current list.", { volume: 1.0 }
         );
         // Go back to current page
         timeoutRef.current = setTimeout(
@@ -217,6 +232,7 @@ export default function App() {
         : "I did not understand. Say a number from 1 to 5 to choose an article.";
 
       Speech.speak(errorMessage, {
+        volume: 1.0,
         onDone: () => {
           timeoutRef.current = setTimeout(
             () => safeStartRecording("articleSelection", currentPage),
@@ -235,6 +251,7 @@ export default function App() {
     setIsSpeaking(true);
 
     Speech.speak(current.question, {
+      volume: 1.0,
       onDone: () => {
         isSpeakingRef.current = false;
         setIsSpeaking(false);
@@ -264,7 +281,7 @@ export default function App() {
     if (recordingRef.current) {
       try {
         await recordingRef.current.stopAndUnloadAsync();
-      } catch {}
+      } catch { }
       recordingRef.current = null;
       setRecording(null);
     }
@@ -479,10 +496,10 @@ export default function App() {
             isSpeakingRef.current = true;
             setIsSpeaking(true);
             Speech.speak(
-              `Skipping ${
-                currentStep === "topic" ? "topic selection" : "outlet selection"
+              `Skipping ${currentStep === "topic" ? "topic selection" : "outlet selection"
               }.`,
               {
+                volume: 1.0,
                 onDone: () => {
                   isSpeakingRef.current = false;
                   setIsSpeaking(false);
@@ -507,6 +524,7 @@ export default function App() {
             isSpeakingRef.current = true;
             setIsSpeaking(true);
             Speech.speak("You said: " + response, {
+              volume: 1.0,
               onDone: () => {
                 isSpeakingRef.current = false;
                 setIsSpeaking(false);
@@ -535,9 +553,8 @@ export default function App() {
   };
 
   const fetchArticles = async (q: string, s: string) => {
-    const url = `https://getnews-px5bnsfj3q-uc.a.run.app${s || q ? "?" : ""}${
-      s ? `source=${s.toLowerCase().replace(/\s+/g, "-")}` : ""
-    }${s && q ? "&" : ""}${q ? `q=${q}` : ""}`;
+    const url = `https://getnews-px5bnsfj3q-uc.a.run.app${s || q ? "?" : ""}${s ? `source=${s.toLowerCase().replace(/\s+/g, "-")}` : ""
+      }${s && q ? "&" : ""}${q ? `q=${q}` : ""}`;
     try {
       console.log("🔍 Fetching articles from:", url);
       setLoading(true);
@@ -560,24 +577,132 @@ export default function App() {
       console.log("🔗 Article title:", article.title);
       console.log("🔗 Article description:", article.description);
 
-      // First, try to use the article content/description from the API if available
       const res = await axios.get(article.url);
       const parsed = HTMLParser.parse(res.data);
       const decode = (str) => he.decode(str);
 
-      // Recursively extract text from nodes
-      const extractText = (node) => {
-        if (!node) return [];
-        if (Array.isArray(node)) return node.flatMap(extractText);
+      // Improved article content extraction
+      const extractArticleContent = () => {
+        // Strategy 1: Look for common article content selectors
+        const articleSelectors = [
+          'article',
+          '[role="main"]',
+          '.article-content',
+          '.story-content',
+          '.post-content',
+          '.entry-content',
+          '.content',
+          '.article-body',
+          '.story-body',
+          '#article-body',
+          '#content',
+          '.main-content'
+        ];
+
+        // Strategy 2: Look for JSON-LD structured data
+        const jsonLdScripts = parsed.querySelectorAll('script[type="application/ld+json"]');
+        for (const script of jsonLdScripts) {
+          try {
+            const data = JSON.parse(script.innerHTML);
+            if (data.articleBody || (data['@type'] === 'Article' && data.text)) {
+              return data.articleBody || data.text;
+            }
+          } catch (e) {
+            // Continue to next strategy
+          }
+        }
+
+        // Strategy 3: Try specific selectors first
+        for (const selector of articleSelectors) {
+          const element = parsed.querySelector(selector);
+          if (element) {
+            const content = extractCleanText(element);
+            if (content && content.length > 200) { // Minimum content length
+              console.log(`📰 Found content using selector: ${selector}`);
+              return content;
+            }
+          }
+        }
+
+        // Strategy 4: Fallback - find the largest text block
+        const body = findBody(parsed.childNodes);
+        if (body) {
+          return findLargestTextBlock(body);
+        }
+
+        return null;
+      };
+
+      // Enhanced text extraction with filtering
+      const extractCleanText = (node) => {
+        if (!node) return '';
+
+        // Skip common non-article elements
+        const skipTags = ['script', 'style', 'nav', 'header', 'footer', 'aside', 'menu'];
+        const skipClasses = ['navigation', 'nav', 'menu', 'sidebar', 'footer', 'header', 'ad', 'advertisement'];
+
+        if (node.tagName && skipTags.includes(node.tagName.toLowerCase())) {
+          return '';
+        }
+
+        if (node.classList) {
+          for (const className of skipClasses) {
+            if (node.classList.contains(className)) {
+              return '';
+            }
+          }
+        }
 
         // Text node
-        if (node.nodeType === 3) return [node.rawText?.trim()].filter(Boolean);
+        if (node.nodeType === 3) {
+          return node.rawText?.trim() || '';
+        }
 
-        // Tag node with children
-        if (node.nodeType === 1 && node.childNodes?.length)
-          return node.childNodes.flatMap(extractText);
+        // Element node
+        if (node.nodeType === 1 && node.childNodes?.length) {
+          return node.childNodes
+            .map(child => extractCleanText(child))
+            .filter(text => text.length > 0)
+            .join(' ');
+        }
 
-        return [];
+        return '';
+      };
+
+      // Find the text block with most content (fallback strategy)
+      const findLargestTextBlock = (body) => {
+        const textBlocks = [];
+
+        const findTextBlocks = (node, depth = 0) => {
+          if (!node || depth > 10) return; // Prevent infinite recursion
+
+          if (node.nodeType === 1) { // Element node
+            const text = extractCleanText(node);
+            if (text && text.length > 100) {
+              textBlocks.push({
+                text: text,
+                length: text.length,
+                element: node.tagName
+              });
+            }
+
+            if (node.childNodes) {
+              node.childNodes.forEach(child => findTextBlocks(child, depth + 1));
+            }
+          }
+        };
+
+        findTextBlocks(body);
+
+        // Sort by length and return the largest block
+        textBlocks.sort((a, b) => b.length - a.length);
+        console.log("📰 Found text blocks:", textBlocks.slice(0, 3).map(b => ({
+          length: b.length,
+          element: b.element,
+          preview: b.text.slice(0, 100) + '...'
+        })));
+
+        return textBlocks[0]?.text || '';
       };
 
       // Recursively find the <body> tag
@@ -593,87 +718,112 @@ export default function App() {
         return null;
       };
 
-      const body = findBody(parsed.childNodes);
-      const articleContent = body ? decode(extractText(body).join("\n")) : "";
+      // Clean up the extracted content
+      const cleanContent = (content) => {
+        if (!content) return '';
+
+        return content
+          // Remove multiple whitespaces and newlines
+          .replace(/\s+/g, ' ')
+          // Remove common navigation text patterns
+          .replace(/skip to content/gi, '')
+          .replace(/subscribe to newsletter/gi, '')
+          .replace(/sign up for our newsletter/gi, '')
+          .replace(/follow us on/gi, '')
+          .replace(/share this article/gi, '')
+          .replace(/related articles?/gi, '')
+          .replace(/advertisement/gi, '')
+          // Remove standalone single characters or numbers
+          .replace(/\b[a-zA-Z0-9]\b/g, '')
+          // Clean up extra spaces
+          .replace(/\s+/g, ' ')
+          .trim();
+      };
+
+      // Extract article content
+      let articleContent = extractArticleContent();
+
+      if (!articleContent) {
+        throw new Error("Could not extract meaningful content from article");
+      }
+
+      // Clean the content
+      articleContent = decode(cleanContent(articleContent));
 
       console.log("📰 Final content length:", articleContent.length);
-      console.log(
-        "📰 Final content preview:",
-        articleContent.slice(0, 300) + "..."
-      );
+      console.log("📰 Final content preview:", articleContent.slice(0, 300) + "...");
 
-      if (!articleContent || articleContent.trim().length <= 0) {
+      if (!articleContent || articleContent.trim().length <= 100) {
         throw new Error("Could not extract meaningful content from article");
       }
 
       setContent(articleContent);
 
-      // Split into words and read every 5 words
-      const words = articleContent
-        .split(/\s+/)
-        .filter((word) => word.trim().length > 0);
+      // Split into sentences for more natural reading
+      const splitIntoSentences = (text) => {
+        // Enhanced sentence splitting that handles common abbreviations and edge cases
+        return text
+          // First, protect common abbreviations
+          .replace(/\b(Mr|Mrs|Ms|Dr|Prof|Sr|Jr|Inc|Corp|Ltd|etc|vs|i\.e|e\.g|a\.m|p\.m|U\.S|U\.K)\./g, '$1<PERIOD>')
+          // Split on sentence-ending punctuation followed by whitespace and capital letter
+          .split(/[.!?]+\s+(?=[A-Z])|[.!?]+$/)
+          // Restore the protected periods
+          .map(sentence => sentence.replace(/<PERIOD>/g, '.').trim())
+          // Filter out empty sentences and very short ones (likely artifacts)
+          .filter(sentence => sentence.length > 10);
+      };
 
-      console.log(`📖 Starting to read ${words.length} words in groups of 5`);
+      const sentences = splitIntoSentences(articleContent);
+      console.log(`📖 Starting to read ${sentences.length} sentences`);
 
       isSpeakingRef.current = true;
       setIsSpeaking(true);
 
-      // Read in groups of 5 words
-      for (let i = 0; i < words.length; i += 5) {
+      // Read sentence by sentence
+      for (let i = 0; i < sentences.length; i++) {
         // Check if we should stop (user pressed stop button)
         if (!isSpeakingRef.current) {
           console.log("📖 Reading stopped by user");
           break;
         }
 
-        // Get next 5 words (or remaining words if less than 5)
-        const wordGroup = words.slice(i, i + 5);
-        const phrase = wordGroup.join(" ");
+        const sentence = sentences[i];
 
         // Clean punctuation for better speech
-        const cleanPhrase = phrase.replace(/["""'']/g, "").trim();
+        const cleanSentence = sentence.replace(/["""'']/g, "").trim();
 
-        console.log(
-          `📖 Reading group ${Math.floor(i / 5) + 1}: "${cleanPhrase}"`
-        );
+        console.log(`📖 Reading sentence ${i + 1}/${sentences.length}: "${cleanSentence}"`);
 
         await new Promise<void>((resolve) => {
-          Speech.speak(cleanPhrase, {
+          Speech.speak(cleanSentence, {
             rate: 0.85,
             pitch: 1.0,
+            volume: 1.0,
             onDone: () => {
-              console.log(`✅ Finished speaking: "${cleanPhrase}"`);
+              console.log(`✅ Finished speaking sentence ${i + 1}`);
               resolve();
             },
             onError: (error) => {
-              console.error("❌ Speech error for phrase:", cleanPhrase, error);
+              console.error("❌ Speech error for sentence:", cleanSentence, error);
               resolve();
             },
           });
         });
 
-        // Add pause between word groups
-        if (isSpeakingRef.current) {
-          // Longer pause if the last word in group ends with sentence punctuation
-          const lastWord = wordGroup[wordGroup.length - 1];
-          if (lastWord && lastWord.match(/[.!?]$/)) {
-            await new Promise((resolve) => setTimeout(resolve, 800));
-          } else if (lastWord && lastWord.match(/[,;:]$/)) {
-            await new Promise((resolve) => setTimeout(resolve, 400));
+        // Add natural pause between sentences
+        if (isSpeakingRef.current && i < sentences.length - 1) {
+          // Vary pause length based on sentence ending
+          if (sentence.match(/[!?]$/)) {
+            await new Promise((resolve) => setTimeout(resolve, 1000)); // Longer pause for exclamations/questions
           } else {
-            await new Promise((resolve) => setTimeout(resolve, 300));
+            await new Promise((resolve) => setTimeout(resolve, 700)); // Standard pause for periods
           }
         }
 
-        // Progress update every 10 groups (50 words)
-        if ((i + 5) % 50 === 0) {
-          const progress = Math.min(
-            Math.round(((i + 5) / words.length) * 100),
-            100
-          );
-          console.log(
-            `📖 Progress: ${i + 5}/${words.length} words (${progress}%)`
-          );
+        // Progress update every 5 sentences
+        if ((i + 1) % 5 === 0) {
+          const progress = Math.round(((i + 1) / sentences.length) * 100);
+          console.log(`📖 Progress: ${i + 1}/${sentences.length} sentences (${progress}%)`);
         }
       }
 
@@ -683,6 +833,7 @@ export default function App() {
       // Announce completion if not stopped by user
       if (isSpeakingRef.current !== false) {
         Speech.speak("Article reading completed.", {
+          volume: 1.0,
           onDone: () => {
             console.log("📖 Article reading finished successfully");
           },
@@ -698,6 +849,7 @@ export default function App() {
         : "There was an error processing the article. Please try again.";
 
       Speech.speak(errorMessage, {
+        volume: 1.0,
         onDone: () => {
           isSpeakingRef.current = false;
           setIsSpeaking(false);
@@ -778,13 +930,13 @@ export default function App() {
             onPress={
               isRecording
                 ? () =>
-                    stopAndTranscribe(
-                      steps[stepIndex]?.key as keyof typeof answers
-                    )
+                  stopAndTranscribe(
+                    steps[stepIndex]?.key as keyof typeof answers
+                  )
                 : () =>
-                    safeStartRecording(
-                      steps[stepIndex]?.key as keyof typeof answers
-                    )
+                  safeStartRecording(
+                    steps[stepIndex]?.key as keyof typeof answers
+                  )
             }
             disabled={isSpeaking || loading}
           />
