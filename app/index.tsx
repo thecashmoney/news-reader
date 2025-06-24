@@ -42,7 +42,7 @@ export default function App() {
   const [allArticles, setAllArticles] = useState<any[]>([]);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [isInArticleSelection, setIsInArticleSelection] = useState(false);
-  // hi
+
   const steps = [
     {
       key: "topic",
@@ -55,10 +55,62 @@ export default function App() {
         "What specific outlet would you like to choose? You can say 'skip' to skip this.",
     },
   ];
+
   const themeTextStyle =
     colorScheme === "light" ? styles.lightThemeText : styles.darkThemeText;
   const themeContainerStyle =
     colorScheme === "light" ? styles.lightContainer : styles.darkContainer;
+
+  // Function to reset the entire app state
+  const resetAppState = () => {
+    console.log("🔄 Resetting app to start");
+
+    // Stop any ongoing speech
+    Speech.stop();
+
+    // Clear timeouts
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    // Stop any ongoing recording
+    if (recordingRef.current) {
+      recordingRef.current.stopAndUnloadAsync().catch(() => { });
+      recordingRef.current = null;
+    }
+
+    // Reset all state
+    setAnswers({
+      topic: "",
+      outlet: "",
+      articlePreference: "",
+      satisfaction: "",
+      outletPreference: "",
+      nextTopic: "",
+    });
+    setTranscribedText("");
+    setIsRecording(false);
+    setStepIndex(0);
+    setContent("");
+    setLoading(false);
+    setFetchedArticle(null);
+    setIsSpeaking(false);
+    setAllArticles([]);
+    setCurrentPageIndex(0);
+    setIsInArticleSelection(false);
+
+    // Reset refs
+    isProcessingRef.current = false;
+    isSpeakingRef.current = false;
+    allArticlesRef.current = [];
+    setRecording(null);
+
+    // Start the flow again after a brief delay
+    setTimeout(() => {
+      runCurrentStep();
+    }, 1000);
+  };
 
   const configureAudioSession = async () => {
     try {
@@ -74,6 +126,7 @@ export default function App() {
       console.error('Failed to configure audio session:', error);
     }
   };
+
   useEffect(() => {
     (async () => {
       const { granted } = await Audio.requestPermissionsAsync();
@@ -274,7 +327,7 @@ export default function App() {
   };
 
   const safeStartRecording = async (
-    stepKey: keyof typeof answers | "articleSelection",
+    stepKey: keyof typeof answers | "articleSelection" | "postArticle",
     articles: any[] = []
   ) => {
     if (isRecording || isProcessingRef.current || isSpeakingRef.current) return;
@@ -293,10 +346,17 @@ export default function App() {
       return;
     }
 
+    if (stepKey === "postArticle") {
+      await startRecording("postArticle" as any);
+      // Record for 5 seconds then process
+      timeoutRef.current = setTimeout(() => stopAndTranscribe("postArticle" as any), 5000);
+      return;
+    }
+
     await startRecording(stepKey);
   };
 
-  const startRecording = async (stepKey: keyof typeof answers) => {
+  const startRecording = async (stepKey: keyof typeof answers | "articleSelection" | "postArticle") => {
     try {
       if (recordingRef.current) return;
 
@@ -314,7 +374,7 @@ export default function App() {
       setRecording(newRecording);
       setIsRecording(true);
 
-      if (stepKey !== "articleSelection") {
+      if (stepKey !== "articleSelection" && stepKey !== "postArticle") {
         timeoutRef.current = setTimeout(() => stopAndTranscribe(stepKey), 5000);
       }
     } catch (err) {
@@ -478,7 +538,16 @@ export default function App() {
         if (pollingData.status === "completed") {
           const response = pollingData.text.replace(/[.。！？!?]+$/, "");
 
-          // Check if user said "skip"
+          // 🎯 ADD THE POST-ARTICLE CHECK RIGHT HERE - BEFORE THE SKIP CHECK
+          if (currentStep === "postArticle") {
+            // Handle post-article response
+            isProcessingRef.current = false;
+            handlePostArticleResponse(response);
+            completed = true;
+            return; // Exit early for post-article handling
+          }
+
+          // Check if user said "skip" (EXISTING CODE STAYS HERE)
           const normalizedResponse = response.toLowerCase().trim();
           if (
             normalizedResponse === "skip" ||
@@ -515,7 +584,7 @@ export default function App() {
               }
             );
           } else {
-            // Normal processing - not a skip
+            // Normal processing - not a skip (EXISTING CODE STAYS HERE)
             setTranscribedText(
               (prev: string) => `${prev}\n${currentStep}: ${response}`
             );
@@ -567,6 +636,66 @@ export default function App() {
       return null;
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePostArticleResponse = (spokenText: string) => {
+    const normalized = spokenText.toLowerCase().trim();
+
+    console.log("📝 Post-article response:", normalized);
+
+    // Clear the auto-reset timeout since user responded
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    // Check for positive responses
+    const positiveResponses = ['yes', 'yeah', 'yep', 'sure', 'okay', 'ok', 'continue', 'another'];
+    const negativeResponses = ['no', 'nope', 'stop', 'quit', 'exit', 'done', 'finish'];
+
+    const isPositive = positiveResponses.some(word => normalized.includes(word));
+    const isNegative = negativeResponses.some(word => normalized.includes(word));
+
+    if (isPositive) {
+      Speech.speak("Great! Let's find another article for you.", {
+        volume: 1.0,
+        onDone: () => {
+          // Reset to start the flow again
+          resetAppState();
+        },
+        onError: () => {
+          resetAppState();
+        }
+      });
+    } else if (isNegative) {
+      Speech.speak("Thank you for using the news reader. Goodbye!", {
+        volume: 1.0,
+        onDone: () => {
+          console.log("👋 User chose to exit");
+          // You could add app exit logic here or just reset
+          // For now, we'll reset after a longer delay
+          setTimeout(() => {
+            resetAppState();
+          }, 5000);
+        }
+      });
+    } else {
+      // Unclear response, ask again
+      Speech.speak("I didn't understand. Please say yes to read another article, or no to finish.", {
+        volume: 1.0,
+        onDone: () => {
+          // Give them another chance to respond
+          setTimeout(() => {
+            safeStartRecording("postArticle" as any);
+            // Shorter timeout for retry
+            timeoutRef.current = setTimeout(() => {
+              console.log("⏰ No clear response, restarting...");
+              resetAppState();
+            }, 8000);
+          }, 500);
+        }
+      });
     }
   };
 
@@ -749,6 +878,7 @@ export default function App() {
 
       // Clean the content
       articleContent = decode(cleanContent(articleContent));
+      // articleContent = "Hello";
 
       console.log("📰 Final content length:", articleContent.length);
       console.log("📰 Final content preview:", articleContent.slice(0, 300) + "...");
@@ -779,17 +909,18 @@ export default function App() {
       isSpeakingRef.current = true;
       setIsSpeaking(true);
 
+      let wasStoppedByUser = false; // Add this flag
+
       // Read sentence by sentence
       for (let i = 0; i < sentences.length; i++) {
         // Check if we should stop (user pressed stop button)
         if (!isSpeakingRef.current) {
           console.log("📖 Reading stopped by user");
+          wasStoppedByUser = true; // Set the flag
           break;
         }
 
         const sentence = sentences[i];
-
-        // Clean punctuation for better speech
         const cleanSentence = sentence.replace(/["""'']/g, "").trim();
 
         console.log(`📖 Reading sentence ${i + 1}/${sentences.length}: "${cleanSentence}"`);
@@ -812,11 +943,10 @@ export default function App() {
 
         // Add natural pause between sentences
         if (isSpeakingRef.current && i < sentences.length - 1) {
-          // Vary pause length based on sentence ending
           if (sentence.match(/[!?]$/)) {
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Longer pause for exclamations/questions
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           } else {
-            await new Promise((resolve) => setTimeout(resolve, 700)); // Standard pause for periods
+            await new Promise((resolve) => setTimeout(resolve, 700));
           }
         }
 
@@ -830,12 +960,21 @@ export default function App() {
       isSpeakingRef.current = false;
       setIsSpeaking(false);
 
-      // Announce completion if not stopped by user
-      if (isSpeakingRef.current !== false) {
-        Speech.speak("Article reading completed.", {
+      // Announce completion if NOT stopped by user
+      if (!wasStoppedByUser) { // Use the flag instead
+        Speech.speak("Article reading completed. Would you like to read another article? Say yes to continue or wait to automatically restart.", {
           volume: 1.0,
           onDone: () => {
             console.log("📖 Article reading finished successfully");
+            // Start recording for user response
+            setTimeout(() => {
+              safeStartRecording("postArticle" as any);
+              // Auto-reset after 10 seconds if no response
+              timeoutRef.current = setTimeout(() => {
+                console.log("⏰ No response received, auto-restarting...");
+                resetAppState();
+              }, 10000);
+            }, 1000);
           },
         });
       }
