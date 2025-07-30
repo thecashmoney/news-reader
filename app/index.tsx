@@ -115,13 +115,14 @@ export default function App() {
   const configureAudioSession = async () => {
     try {
       await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: false, // Prevents volume ducking on Android
-        playThroughEarpieceAndroid: false,
-        staysActiveInBackground: false,
-        interruptionMode: "mixWithOthers",
-      });
+      allowsRecordingIOS: false,
+      staysActiveInBackground: true,
+      interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+      interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+      playThroughEarpieceAndroid: false, // (Android only)
+});
     } catch (error) {
       console.error('Failed to configure audio session:', error);
     }
