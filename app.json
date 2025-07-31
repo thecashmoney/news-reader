@@ -10,11 +10,13 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.mehlliott.newsreader",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app needs access to the microphone for voice input.",
+        "NSPhotoLibraryUsageDescription": "This app may request access to the photo library due to third-party libraries. No photos are collected or stored.",
+        "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to convert spoken words into text.",
         "ITSAppUsesNonExemptEncryption": false
-      },
-      "bundleIdentifier": "com.mehlliott.newsreader"
+      }
     },
     "android": {
       "adaptiveIcon": {
