@@ -42,6 +42,7 @@ export default function App() {
   const [allArticles, setAllArticles] = useState<any[]>([]);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [isInArticleSelection, setIsInArticleSelection] = useState(false);
+  const [shouldFetchArticles, setShouldFetchArticles] = useState(false); // Add this flag
 
   const steps = [
     {
@@ -99,6 +100,7 @@ export default function App() {
     setAllArticles([]);
     setCurrentPageIndex(0);
     setIsInArticleSelection(false);
+    setShouldFetchArticles(false); // Reset the flag
 
     // Reset refs
     isProcessingRef.current = false;
@@ -118,7 +120,7 @@ export default function App() {
       allowsRecordingIOS: false,
       staysActiveInBackground: true,
       interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
-      playsInSilentModeIOS: true,
+      playsInSilentModeIOS: false,
       shouldDuckAndroid: true,
       interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
       playThroughEarpieceAndroid: false, // (Android only)
@@ -140,6 +142,7 @@ export default function App() {
     })();
   }, []);
 
+  // Modified useEffect to handle both step progression and article fetching
   useEffect(() => {
     const executeFetch = async () => {
       // Convert empty strings to null for the API call
@@ -153,8 +156,12 @@ export default function App() {
       const articles = await fetchArticles(topicParam, outletParam);
 
       if (!articles || articles.length === 0) {
-        Speech.speak("No articles were found for the given topic and source", { volume: 1.0 });
-        resetAppState();
+        Speech.speak("No articles were found for the given topic and source. Let's try again with different criteria.", { volume: 1.0 });
+        // Reset and start over instead of just calling resetAppState
+        setTimeout(() => {
+          resetAppState();
+        }, 2000);
+        return;
       }
 
       // Store in both state (for UI display) and ref (for immediate access)
@@ -162,15 +169,17 @@ export default function App() {
       allArticlesRef.current = articles;
       setCurrentPageIndex(0);
       setIsInArticleSelection(true);
+      setShouldFetchArticles(false); // Reset the flag after successful fetch
       speakArticlesPage(articles, 0);
     };
 
-    if (stepIndex >= steps.length && !isInArticleSelection) {
+    // Check if we should fetch articles (completed all steps and flag is set)
+    if (stepIndex >= steps.length && shouldFetchArticles && !isInArticleSelection) {
       executeFetch();
     } else if (stepIndex < steps.length) {
       runCurrentStep();
     }
-  }, [stepIndex]);
+  }, [stepIndex, shouldFetchArticles]); // Add shouldFetchArticles to dependencies
 
   const speakArticlesPage = (articles: any[], pageIndex: number) => {
     const start = pageIndex * 5;
@@ -503,13 +512,25 @@ export default function App() {
                 isSpeakingRef.current = false;
                 setIsSpeaking(false);
                 isProcessingRef.current = false;
-                setStepIndex((prev) => prev + 1);
+                const nextStep = stepIndex + 1;
+                setStepIndex(nextStep);
+                
+                // If we've completed all steps, trigger article fetch
+                if (nextStep >= steps.length) {
+                  setShouldFetchArticles(true);
+                }
               },
               onError: () => {
                 isSpeakingRef.current = false;
                 setIsSpeaking(false);
                 isProcessingRef.current = false;
-                setStepIndex((prev) => prev + 1);
+                const nextStep = stepIndex + 1;
+                setStepIndex(nextStep);
+                
+                // If we've completed all steps, trigger article fetch
+                if (nextStep >= steps.length) {
+                  setShouldFetchArticles(true);
+                }
               },
             }
           );
@@ -528,13 +549,25 @@ export default function App() {
               isSpeakingRef.current = false;
               setIsSpeaking(false);
               isProcessingRef.current = false;
-              setStepIndex((prev) => prev + 1);
+              const nextStep = stepIndex + 1;
+              setStepIndex(nextStep);
+              
+              // If we've completed all steps, trigger article fetch
+              if (nextStep >= steps.length) {
+                setShouldFetchArticles(true);
+              }
             },
             onError: () => {
               isSpeakingRef.current = false;
               setIsSpeaking(false);
               isProcessingRef.current = false;
-              setStepIndex((prev) => prev + 1);
+              const nextStep = stepIndex + 1;
+              setStepIndex(nextStep);
+              
+              // If we've completed all steps, trigger article fetch
+              if (nextStep >= steps.length) {
+                setShouldFetchArticles(true);
+              }
             },
           });
         }
