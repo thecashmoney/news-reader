@@ -4,7 +4,7 @@
     "slug": "news-reader",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "20250804_1804_Sleek News Microphone Icon_simple_compose_01k1vw4bhrfxqszq6456xrk1c4.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -20,7 +20,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "20250804_1804_Sleek News Microphone Icon_simple_compose_01k1vw4bhrfxqszq6456xrk1c4.png",
         "backgroundColor": "#ffffff"
       },
       "permissions": [
