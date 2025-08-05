@@ -12,7 +12,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.mehlliott.newsreader",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "This app uses the microphone to capture your voice commands so it can transcribe them into text and deliver the news you request. For example, if you say 'Politics from BBC,' the app will recognize your speech and fetch relevant BBC political news articles for you.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone to capture your voice commands so it can transcribe them into text and deliver the news you request. For example, if you say 'Politics from BBC,' the app will recognize your speech and fetch relevant BBC political news articles for you",
         "NSPhotoLibraryUsageDescription": "This app may request access to the photo library due to third-party libraries. No photos are collected or stored.",
         "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to convert spoken words into text in order to process them into the code.",
         "ITSAppUsesNonExemptEncryption": false
