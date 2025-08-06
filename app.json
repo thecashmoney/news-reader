@@ -49,7 +49,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone."
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone to capture your voice commands so it can transcribe them into text and deliver the news you request."
         }
       ],
       "expo-web-browser"
